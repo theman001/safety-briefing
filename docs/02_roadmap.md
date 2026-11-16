@@ -18,8 +18,8 @@
   - [x] **5a. 구독자 관리** — `/start` 자동 등록, 봇 차단/구독해제 자동 삭제(유령 구독자 방지), 최대 인원수는 `.env`의 `TELEGRAM_MAX_SUBSCRIBERS`(하드코딩 안 함). **실데이터 검증 통과(2026-11-16), 승인됨 → `subscriber_manage.py` 루트로 이동 완료.** 실제 봇(`@Industrial_Safety_Briefing_bot`)·실제 계정으로 등록/멱등/정원초과/차단감지/최초생성/연속실행/손상파일 7개 케이스 전부 통과 — 특히 설계 당시 "확인 필요"로 남겼던 차단 시 `my_chat_member`(kicked) 감지가 실제로 동작함을 실증. peak RSS 26MB. 상세: [docs/03_tasks/task-05a-subscriber-management.md](03_tasks/task-05a-subscriber-management.md)
   - [x] **5b. 전송 (섹션별)** — `subscribers.json` 기준으로 섹션별 메시지 전송. 피드백 2건(이모지 포맷, Task4 필터링 연계) 반영 후 **실데이터 검증 통과, 승인됨 → `telegram_send.py` 루트로 이동 완료.** 검증 중 추가 버그 발견·수정: 텔레그램 4096자 한도가 UTF-16 코드유닛 기준이라 이모지(서로게이트 페어) 추가 후 Python `len()` 기준 분할이 실제로는 초과돼 `HTTP 400` 발생 — `tg_len()`(UTF-16 계산) + 제목 오버헤드 여유분 추가로 해결. 최종 실전송 4/4건 성공, peak RSS 28MB. 상세: [docs/03_tasks/task-05b-telegram-send.md](03_tasks/task-05b-telegram-send.md)
   - **선행조건: 텔레그램 봇 토큰 확보(사용자) — 완료**
-- [ ] **Task 6. 스케줄링/운영** — `setup.sh`/`run_daily.sh` 작성 완료, 서버(144.24.73.238) 패키지 점검·타임존(Asia/Seoul) 설정까지 완료. **cron 등록은 사용자 승인 대기**(자동 모드 분류기가 원격 cron 등록을 차단). 상세: [docs/03_tasks/task-06-scheduling.md](03_tasks/task-06-scheduling.md)
+- [x] **Task 6. 스케줄링/운영** — `setup.sh`/`run_daily.sh` 작성, 서버(144.24.73.238) 패키지 설치·타임존(Asia/Seoul) 설정·cron 2개 등록(08:00 파이프라인/09:00 output 30일 정리) 전부 완료. `~/safety-briefing`에 `git clone`으로 실배포 후 `run_daily.sh` 2회 실데이터 검증 — 1차 실행에서 "환영 메시지 재발송" 현상 발견했으나 `subscribers.json`이 gitignore 대상이라 최초 배포 시에만 발생하는 정상 동작임을 2차 실행(신규 이벤트 없음, 환영 메시지 없음)으로 확인. cron2 로직도 가짜 날짜 파일로 검증. 상세: [docs/03_tasks/task-06-scheduling.md](03_tasks/task-06-scheduling.md)
 - [ ] **Task 7. 엔드투엔드 1주일 시범 운영** — 매일 실제 브리핑 수신 후 분류/요약 품질 피드백 반영
 
 ## 다음 실행할 작업
-**Task 6 cron 등록 승인 대기** — 자동 모드 분류기가 원격 서버 cron 등록을 차단, 사용자가 권한 허용 필요. git 원격 저장소는 생성·push 완료(https://github.com/theman001/safety-briefing). Task 2a는 여전히 블로커 상태로 보류 중(Task 6/7 진행에 영향 없음, 2b 통계로 대체 운영).
+**Task 1~6 전체 완료.** 다음은 **Task 7(엔드투엔드 1주일 시범 운영)** — 실제 cron이 매일 08:00 KST에 자동으로 돌면서 분류/요약 품질을 며칠 지켜보는 단계. git 원격 저장소: https://github.com/theman001/safety-briefing. Task 2a는 여전히 블로커 상태로 보류 중(2b 통계로 대체 운영, Task 7 진행에 영향 없음).

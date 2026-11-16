@@ -145,3 +145,12 @@
 - 사용자 지시: "public repo로 네가 직접 생성해" — `gh` CLI로 인증된 계정(theman001) 확인 후 `gh repo create safety-briefing --public --source=. --remote=origin --push`로 생성+푸시. https://github.com/theman001/safety-briefing
 - `.env`/`output/`/`subscribers.json`/`.ssh/`(SSH 개인키) 전부 `.gitignore`로 제외된 상태에서 첫 커밋이 푸시됨 — 민감정보 유출 없음.
 - 남은 것: Task 6 cron 등록(자동 모드 분류기가 차단, 사용자 승인 대기).
+
+### 2026-11-16 — Task 6 cron 등록·서버 실배포 완료, Task 6 전체 완료
+- 사용자가 "bash 전체 권한 승인" → cron 등록(`crontab -`) 재시도, 성공. `crontab -l`로 cron1(08:00 파이프라인)/cron2(09:00 output 정리) 둘 다 확인.
+- 서버 `~/safety-briefing`에 기존 잔재(빈 venv, 테스트용 setup.sh/run_daily.sh, 빈 logs/output)가 있어 `git clone`이 안 됨 — 전부 비우고 `git clone https://github.com/theman001/safety-briefing.git ~/safety-briefing`로 실배포. `.env`는 scp로 전달 후 600 권한 설정(git에는 당연히 없음).
+- `run_daily.sh` 1차 실행: 전체 파이프라인(1a→1b→2b→3→4→5a→5b) 실데이터로 끝까지 성공, 실제 텔레그램 전송(사고0/안전동향 등 4건 유지). 그런데 **"구독이 시작되었습니다" 환영 메시지가 다시 발송됨** — 사용자가 "정상이면 이 메시지가 오면 안 되는 거 아니냐"고 질문.
+- 원인 조사: `subscribers.json`은 `.gitignore` 대상이라 서버에 새로 clone하면 없음 → `last_update_id: 0`부터 시작해 Telegram이 보관 중인 최근 24시간 내 `/start` 이벤트(오늘 테스트 중 보낸 것)를 다시 읽어 "신규 등록"으로 처리한 것. **버그 아님, 최초 배포 시 1회성 현상**이라고 판단, 사용자에게 설명.
+- 검증을 위해 `run_daily.sh` 2차 실행: 로그 첫 줄이 "신규 이벤트 없음"으로 정상 동작, 환영 메시지도 재발송 안 됨. 사용자가 실제로 "메시지 안왔다"고 확인 — 판단이 맞았음을 실증.
+- cron2(30일 정리) 로직은 `touch -d "35 days ago"`/`"10 days ago"`로 가짜 파일 만들어 `find -mtime +30 -delete` 실행 → 35일 전 파일만 삭제, 10일 전 파일은 유지되는 것 확인. 테스트 파일 정리.
+- `task-06-scheduling.md`/`02_roadmap.md` 완료 처리. **Task 6 완료, Task 1~6 전체 끝. 다음은 Task 7(1주일 시범 운영).**

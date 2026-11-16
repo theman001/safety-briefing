@@ -1,0 +1,6 @@
+.env
+output/
+__pycache__/
+subscribers.json
+.ssh/
+.claude/settings.local.json

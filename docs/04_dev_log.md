@@ -140,3 +140,8 @@
 - 3) `run_daily.sh`(Task 1~5 스크립트 순차 실행, 각 스크립트 자체 예외처리에 의존해 별도 재시도/중단 로직 없음 — ponytail) + `setup.sh`(패키지 점검→타임존 Asia/Seoul 설정→cron 2개 등록, 전부 idempotent) 작성. 상세 설계는 `task-06-scheduling.md`에 기록(사용자가 직접 스펙을 줘서 별도 `/plan-task` 라운드 없이 문서화+구현 동시 진행).
 - 서버에 scp로 올려 단계별 실전 검증: 패키지 점검(idempotent 확인) 통과, 타임존 변경(Asia/Seoul로 실제 전환 확인) 통과, 디렉터리/실행권한 설정 통과. **cron 등록(`crontab -`)만 로컬 자동 모드 분류기가 "원격 서버 상시 반복 작업 등록"으로 분류해 차단** — 사용자 승인 대기 중.
 - 다음: 사용자가 cron 등록 승인하면 마저 진행 + `run_daily.sh` 수동 1회 실행으로 서버에서 전체 파이프라인 확인. git push를 위한 원격 저장소 URL도 필요(아직 안 받음).
+
+### 2026-11-16 — GitHub public repo 생성·push
+- 사용자 지시: "public repo로 네가 직접 생성해" — `gh` CLI로 인증된 계정(theman001) 확인 후 `gh repo create safety-briefing --public --source=. --remote=origin --push`로 생성+푸시. https://github.com/theman001/safety-briefing
+- `.env`/`output/`/`subscribers.json`/`.ssh/`(SSH 개인키) 전부 `.gitignore`로 제외된 상태에서 첫 커밋이 푸시됨 — 민감정보 유출 없음.
+- 남은 것: Task 6 cron 등록(자동 모드 분류기가 차단, 사용자 승인 대기).

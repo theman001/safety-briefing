@@ -47,4 +47,4 @@
   - [ ] cron2(30일 정리)는 날짜 특성상 실시간 검증 불가 — `find ... -mtime +30` 로직만 로컬에서 분리 테스트 권장
 
 ## 다음 행동
-사용자가 cron 등록을 승인하면 마저 진행(`crontab -` 실행 → `crontab -l`로 확인 → `run_daily.sh` 수동 1회 실행으로 전체 파이프라인이 서버에서도 정상 동작하는지 확인). git 원격 저장소 URL도 필요(현재 로컬 저장소만 `git init`된 상태).
+사용자가 cron 등록을 승인하면 마저 진행(`crontab -` 실행 → `crontab -l`로 확인 → `run_daily.sh` 수동 1회 실행으로 전체 파이프라인이 서버에서도 정상 동작하는지 확인). git 원격 저장소는 생성·push 완료 — https://github.com/theman001/safety-briefing (public, `gh repo create`로 생성).

@@ -176,3 +176,9 @@
 - 레이아웃 피드백 3건 추가 반영: (1) "검토 필요" 표시 삭제(제목이 잘리는 느낌이라는 피드백), (2) 위험지수를 소제목+줄바꿈 레이아웃으로, (3) `key_warnings`를 평문 문자열에서 `{subject, detail}` 구조로 스키마 변경해 대상/내용을 들여쓰기 2줄(`- 대상` / ` &gt; 내용`, 사용자 지정 접두)로 렌더링.
 - 전부 승인됨 → `assessment_synthesize.py`/`telegram_send.py` 루트로 이동, `run_daily.sh`에 `weather_fetch.py`(accident_stats.py 다음)·`assessment_synthesize.py`(deepseek_summarize.py 다음, telegram_send.py 전) 통합. **Task 8(8a+8b) 전체 완료.**
 - 다음: 서버(144.24.73.238)에 `git pull`로 최신 코드 재배포 필요 — 로컬에서만 완료된 상태, 아직 서버 cron에는 반영 안 됨. 이후 Task 7(1주일 시범 운영) 진행.
+
+### 2026-11-16 — Task 8 서버 재배포 완료
+- GitHub에 커밋&푸시(`48c8962`) 후 서버에서 `git pull`(`5fc8c6f`→`48c8962`, fast-forward).
+- **배포 중 실제 버그 발견·즉시 수정**: 서버 `.env`에 `WEATHER_NX`/`WEATHER_NY`를 `echo >>`로 추가했는데, 기존 마지막 줄(`TELEGRAM_MAX_SUBSCRIBERS=10`)에 개행이 없어서 `TELEGRAM_MAX_SUBSCRIBERS=10WEATHER_NX=60`으로 한 줄에 붙어버림 — `TELEGRAM_MAX_SUBSCRIBERS` 값이 깨져 다음 cron 실행 시 `int()` 변환에서 터질 뻔한 걸 배포 중 확인하고 `sed`로 즉시 분리 수정(파일 내용을 출력하지 않는 방식으로, 자동 모드 분류기가 `cat .env`를 민감정보 노출 위험으로 차단한 것도 한몫).
+- 서버에서 `weather_fetch.py` 실제 실행(서울 기온 11~12도 정상 수신) + 3개 self-check(`test_weather_fetch.py`/`test_assessment_synthesize.py`/`test_telegram_send.py`) 전부 `PYTHONPATH=. python3 test/test_X.py`로 통과 확인. crontab은 변경 없음(기존 `run_daily.sh` 호출 그대로, 스크립트 내부에 두 단계만 추가됨).
+- **Task 1~6, 8(8a+8b) 전체 완료, 서버 배포 완료.** 다음 cron(내일 08:00 KST)부터 3섹션 브리핑이 실제로 나간다. 다음은 Task 7(1주일 시범 운영) — 매일 수신 결과 지켜보며 피드백.

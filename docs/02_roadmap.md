@@ -26,4 +26,4 @@
   - **선행조건(공통, 해결됨): data.go.kr 위치 설정은 `.env`의 `WEATHER_NX`/`WEATHER_NY`(기본값 서울 60/127)로 분리(사용자 결정, 2026-11-16) — `.env.example`에 추가 완료.**
 
 ## 다음 실행할 작업
-**Task 1~6, 8(8a+8b) 완료.** `run_daily.sh`에 `weather_fetch.py`/`assessment_synthesize.py` 통합 완료 — 다음 cron 실행(08:00 KST)부터 3섹션 브리핑이 자동으로 나간다. 다음은 **Task 7(엔드투엔드 1주일 시범 운영)** — 서버에 최신 코드 재배포 후 며칠 지켜보는 단계. git 원격 저장소: https://github.com/theman001/safety-briefing. Task 2a는 여전히 블로커 상태로 보류 중(2b 통계로 대체 운영, 진행에 영향 없음).
+**Task 1~6, 8(8a+8b) 완료, 서버 배포 완료(2026-11-16).** 다음 cron 실행(내일 08:00 KST)부터 3섹션 브리핑이 자동으로 나간다. 다음은 **Task 7(엔드투엔드 1주일 시범 운영)** — 매일 수신 결과를 지켜보며 분류/요약/종합평가 품질 피드백 반영. git 원격 저장소: https://github.com/theman001/safety-briefing. Task 2a는 여전히 블로커 상태로 보류 중(2b 통계로 대체 운영, 진행에 영향 없음).

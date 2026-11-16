@@ -1,0 +1,113 @@
+# Task 8b. 종합 평가 (AI 합성)
+
+상태: **완료 — 실데이터 검증 통과, 승인됨** (작성일 2026-11-16, 검증 2026-11-16, 승인 2026-11-16)
+
+## 배경
+Task 8a(날씨 수집)가 완료돼 `output/weather_<date>.json`(기온/습도/강수확률/풍속/하늘상태 + 공식 특보 발효 목록)을 매일 확보할 수 있다. 이번 작업은 이 날씨 데이터와 Task 4의 요약 결과(`output/summarized_briefing_<date>.json`)를 묶어 사용자가 요청한 **[3. 종합 평가]** 섹션을 AI로 합성하고, `telegram_send.py`에 3번째 섹션으로 통합한다.
+
+사용자 스펙(요약): (1) 날씨+어제 사고심각도 → 위험지수(관심/주의/경고)+사유, (2) 사고·동향·날씨 교차 인사이트, (3) 구체적 대상을 지정한 핵심 경고 2~3개, (4) 날씨 기반 "오늘의 한마디".
+
+### 설계 결정: "어제 사고 심각도"는 별도 데이터가 필요 없다
+이 프로젝트는 매일 아침 "전날 발생한" 사고를 수집해 그날 아침 브리핑으로 보낸다(CLAUDE.md 목적). 즉 `summarized_briefing_<date>.json`의 `INCIDENT_REPORT`/`INCIDENT_FOLLOWUP` 항목이 이미 "어제 사고"다 — 텔레그램의 "오늘의 사고" 섹션과 같은 데이터를 재사용한다. 별도 심각도 점수 필드를 새로 만들지 않고, `key_facts`/`incident_type` 원문 텍스트를 AI에게 그대로 넘겨 심각도를 판단하게 한다(ponytail: 이미 있는 데이터 재사용, 새 스키마 안 만듦).
+
+### 설계 결정: 위험지수(관심/주의/경고)는 "공식 특보 있으면 무조건 경고"를 코드로 강제
+risk_level 판정을 전부 AI에게 맡기면, 공식 특보가 떠 있는데도 모델이 "주의"로 낮춰 판단할 위험이 있다 — 안전 브리핑에서 이건 제일 위험한 실패 모드(거짓 안전신호). 그래서 **코드에서 결정론적으로**: `weather.official_warnings.active`가 비어있지 않으면 **risk_level을 무조건 "경고"로 덮어쓰고**, `risk_reason`에 특보명이 안 들어있으면 앞에 붙인다. 특보가 없을 때만 AI의 판단(날씨 수치의 상대적 심함 + 사고 심각도)을 그대로 쓴다. 구체적 숫자 임계값("33도 이상" 등)은 우리가 지어낸 공식 기준이 아니므로 AI에게도 지어내지 말라고 명시한다(사실 확인 전 추측 금지).
+
+## 목표
+날씨(8a) + 오늘 요약된 사고/동향(Task 4)을 DeepSeek로 합성해 위험지수·교차 인사이트·핵심 경고·오늘의 한마디를 생성하고, 기존 두 섹션 뒤에 3번째 섹션으로 텔레그램 전송에 통합한다.
+
+## 입력
+- `output/weather_<date>.json` (Task 8a 출력)
+- `output/summarized_briefing_<date>.json` (Task 4 출력, `summaries` 배열: industry/incident_type/key_facts/probable_cause/maintenance_lesson/classification/needs_review)
+- 환경변수: `DEEPSEEK_API_KEY` (기존 재사용, 새 키 없음)
+
+## 처리 로직 개요
+1. `weather_<date>.json`을 읽는다. 없으면 **스킵**(`skipped=true`, DeepSeek 호출 안 함) — 날씨 없이 위험지수를 지어낼 수 없음.
+2. `summarized_briefing_<date>.json`을 읽는다. 파일 자체가 없으면(Task 4가 아직 안 돈 상태) **스킵**. 파일은 있지만 `summaries`가 0건이면(사고/동향 둘 다 없는 조용한 날) 스킵하지 않고 "오늘 사고/동향 기사 없음"을 프롬프트에 명시해 날씨만으로 생성 시도.
+3. `summaries`를 `INCIDENT_REPORT`/`INCIDENT_FOLLOWUP`(사고)와 `SAFETY_TREND`/`MAINTENANCE_TECH`/`LAW_POLICY`(동향)로 나눠 DeepSeek 프롬프트에 넘긴다(기존 `telegram_send.py`의 `INCIDENT_CLASSIFICATIONS`/`TREND_CLASSIFICATIONS` 집합을 그대로 재사용).
+4. DeepSeek 호출(모델 `deepseek-flash`, `deepseek_summarize.py`와 동일한 모델·재시도 패턴 재사용). 응답 JSON에서 `risk_level`(관심/주의/경고 중 하나, 아니면 에러)·`risk_reason`·`cross_insights`(0~3개 문자열 배열)·`key_warnings`(0~3개 문자열 배열)·`closing_message`를 파싱.
+5. **결정론적 보정**: `official_warnings.active`가 비어있지 않으면 `risk_level`을 "경고"로 강제 치환하고, `risk_reason`에 특보명이 없으면 앞에 붙인다.
+6. `output/comprehensive_assessment_<date>.json`에 저장.
+7. `telegram_send.py`에 `assessment_block()` 추가: 이 파일이 있고 `skipped`가 아니면 3번째 섹션(`🧭 종합 평가`)으로 기존 두 섹션 뒤에 추가해 전송. 파일이 없거나 읽기 실패하면 경고만 로그로 남기고 기존 두 섹션은 그대로 전송(부분 실패 허용 — 날씨/종합평가 문제가 사고·동향 전달을 막지 않음).
+
+## 출력
+- `output/comprehensive_assessment_<date>.json`:
+  ```json
+  {
+    "target_date_kst": "2026-11-16",
+    "generated_at_kst": "2026-11-16T08:05:00+09:00",
+    "model": "deepseek-flash",
+    "skipped": false,
+    "skip_reason": null,
+    "risk_level": "주의",
+    "risk_reason": "공식 특보는 없으나 강수확률 70%·풍속 8m/s로 평소보다 높고, 오늘 사고 기사 중 끼임 중상 1건이 있었음",
+    "cross_insights": [
+      "오늘 사고 원인(끼임, 방호장치 미설치)이 강풍·강우와 겹치면 젖은 바닥 미끄러짐·개구부 추락 2차 사고로 이어지기 쉽다",
+      "안전동향의 '웨어러블 근접 센서' 도입 사례는 오늘 같은 날 이동형 설비 주변 작업자 안전 확보에 바로 적용할 수 있다"
+    ],
+    "key_warnings": [
+      "분전함·배전함 커버 체결 상태 우선 점검(강우로 누전 위험 상승)",
+      "고소·지붕 작업 중단 검토(풍속 8m/s 이상)"
+    ],
+    "closing_message": "비 오는 날은 바닥이 미끄럽다 — 이동 경로부터 다시 확인하자.",
+    "token_usage": {"prompt_tokens": 0, "completion_tokens": 0}
+  }
+  ```
+- 텔레그램 3번째 섹션 렌더링 예시(`telegram_send.py`의 `assessment_block()`):
+  ```
+  🧭 종합 평가 (2026-11-16)
+
+  🌡️ 위험지수: 주의 — 공식 특보는 없으나 강수확률 70%·풍속 8m/s로 평소보다 높고, 오늘 사고 기사 중 끼임 중상 1건이 있었음
+
+  🔗 교차 인사이트
+  - 오늘 사고 원인(끼임, 방호장치 미설치)이 강풍·강우와 겹치면 젖은 바닥 미끄러짐·개구부 추락 2차 사고로 이어지기 쉽다
+  - 안전동향의 '웨어러블 근접 센서' 도입 사례는 오늘 같은 날 이동형 설비 주변 작업자 안전 확보에 바로 적용할 수 있다
+
+  ⚠️ 핵심 경고
+  - 분전함·배전함 커버 체결 상태 우선 점검(강우로 누전 위험 상승)
+  - 고소·지붕 작업 중단 검토(풍속 8m/s 이상)
+
+  ☔️ 오늘의 한마디: 비 오는 날은 바닥이 미끄럽다 — 이동 경로부터 다시 확인하자.
+  ```
+
+## 예외 처리
+- `weather_<date>.json` 없음/손상 → `skipped=true`, DeepSeek 호출 안 함, exit 0(조용한 스킵 — run_daily.sh 다음 단계 계속)
+- `summarized_briefing_<date>.json` 파일 자체가 없음 → 위와 동일하게 스킵, exit 0
+- `summaries` 0건(파일은 있음) → 스킵하지 않음, "사고/동향 없음"을 프롬프트에 명시해 날씨 기반으로만 생성
+- DeepSeek 호출 실패(재시도 3회 후에도 실패) → RuntimeError, 출력 파일 안 씀, exit 1 — `telegram_send.py`는 파일이 없으니 3번째 섹션만 생략, 기존 두 섹션은 정상 전송
+- 응답 JSON 파싱 실패, `risk_level`이 관심/주의/경고가 아님, 필수 키 누락 → RuntimeError, exit 1(가짜 값으로 보정하지 않음)
+- `telegram_send.py` 쪽: `comprehensive_assessment_<date>.json`이 없거나 `skipped=true`면 경고 로그만 남기고 기존 두 섹션 전송은 막지 않음
+
+## 사용할 라이브러리
+- `urllib.request`, `json`, `os`, `argparse`, `datetime` — 전부 표준 라이브러리. `deepseek_summarize.py`의 `call_deepseek` 재시도 패턴을 그대로 복붙 재사용(새로 만들지 않음).
+
+## 검증 기준 (실데이터) — 전부 통과 (2026-11-16)
+- [x] 실제 `output/weather_20261116.json` + 실제 `output/summarized_briefing_2026-11-15.json`(사고2/동향3)으로 DeepSeek 실호출 성공 — `risk_level: 관심`, peak RSS 28MB/4.7초
+- [x] 응답의 `risk_level`이 관심/주의/경고 중 하나인지, `cross_insights`/`key_warnings`가 단순 재요약이 아니라 날씨와 실제로 결합했는지 수동 검토 — **버그 발견·수정**: 1차 실행에서 cross_insights/key_warnings 3번째 항목이 입력에 전혀 없던 "끼임·컨베이어·모터" 소재를 지어내 개수(2~3개)를 채웠음(실제 입력은 정전·화학물질누출 사고와 처벌/검사선임/소방훈련 동향뿐, "끼임" 언급 없음) — 사실 확인 전 추측 금지 원칙 위반. 프롬프트를 "최대 N개까지"로 바꾸고 "입력에 실제로 등장한 사고 원인·업종·기법에서만 끌어온다, 개수를 채우려고 지어내지 않는다, 근거가 부족하면 더 적게 써도 된다"를 명시해 수정. 재실행 결과 3개 항목 전부 실제 입력 기사(반도체 정전/화학물질 유출/GS칼텍스 소방훈련)에서 직접 추적 가능하게 개선됨
+- [x] 공식 특보가 없는 날 실데이터(현재 서울 활성 특보 없음) + 특보 데이터를 인위로 채운 경우(unit test) 둘 다로 결정론적 보정(강제 "경고") 동작 확인
+- [x] `summaries` 0건(사고/동향 없는 날)을 흉내낸 입력 → 스킵하지 않고 cross_insights는 올바르게 빈 배열, key_warnings/closing_message는 실제 날씨 수치(기온/습도/강수확률)에만 근거해 생성됨 확인
+- [x] `weather_<date>.json` 없는 경우 정상 스킵(exit 0, `skipped=true`, DeepSeek 호출 안 함) 확인
+- [x] `telegram_send.py`에 실제로 3번째 섹션이 붙어 실제 텔레그램으로 전송됨 확인(3/3건 성공, 기존 두 섹션 포맷 그대로 유지) — 사용자 수신 확인 대기
+- [x] `comprehensive_assessment_<date>.json`이 없을 때(날씨 누락 시뮬레이션) `load_assessment()`가 None을 반환해 기존 두 섹션만 정상 전송되는 경로를 unit test로 확인
+- [x] 메모리/실행시간 측정 — `assessment_synthesize.py` peak RSS 28MB/4.7초, `telegram_send.py` 기존치와 동일 수준
+
+## 추가 반영 (2026-11-16) — 텔레그램 HTML 서식, 세 섹션 통일 적용
+사용자 요청으로 플레인 텍스트 전송을 HTML parse_mode로 전환, 기존 두 섹션(오늘의 사고/안전동향)과 종합평가 섹션 전부에 통일 적용:
+- `_send_message()`에 `parse_mode: "HTML"` 추가.
+- `article_block()`: 제목 `<b>`, 업종/사고유형 강조, 검토필요 `<i>`, 원인/교훈 라벨 `<b>`, 링크를 `<a href>`로 변경("기사 원문" 앵커 텍스트).
+- `assessment_block()`: 위험지수를 `<code>` 배지, 핵심경고 헤더 `<u><b>`, 오늘의 한마디를 `<blockquote>`로.
+- 뉴스 원문/AI 생성 텍스트는 전부 `html.escape()`로 이스케이프(`<`,`>`,`&`가 섞여 있으면 이스케이프 없이는 `can't parse entities`로 전송 거부됨 — 실제 테스트 케이스로 검증).
+- **실제 수신 확인 중 2번째 버그 발견·수정**: `html.escape()` 기본값(`quote=True`)이 본문 텍스트의 `"`/`'`까지 `&quot;`/`&#x27;`로 바꿨는데, 텔레그램 HTML parse_mode가 본문에서 이 엔티티를 안정적으로 디코드하지 않아 사용자가 실제 수신한 메시지에 `&quot;2월 수로...`, `...투입 &#x27;눈길&#x27;`처럼 글자 그대로 노출됨("어색하다"는 사용자 피드백으로 발견). 본문 텍스트는 따옴표를 이스케이프할 필요가 원래 없다(HTML 특수문자가 아님, 속성값도 아님) — `_esc()`(본문용, `quote=False`)와 `_esc_attr()`(href 속성용, `quote=True`)로 분리해 수정. 재검증: 실제 "솔루스첨단소재... "2월 수로 오염"..." / "...투입 '눈길'" 두 기사 모두 따옴표가 정상 노출, 재전송 성공.
+- **실데이터 검증 중 실제 버그 발견·수정**: `industry`가 null인 기사(업종 미매칭 SAFETY_TREND)에서 `_esc(None)`이 `AttributeError`로 크래시 — `industry`/`key_facts` null에 각각 "업종 미확인"/"세부 사실 확인 전" 폴백 추가. 수정 후 실제 2026-11-15 데이터(업종 null 기사 포함)로 3/3건 재전송 성공.
+
+## 추가 반영 (2026-11-16) — 레이아웃 피드백 3건
+사용자가 실제 수신 메시지를 보고 준 피드백 3건 반영:
+1. **"검토 필요" 표시 삭제**: 오늘의 사고/안전동향 두 섹션에서 `article_block()`의 `<i>⚠️ 검토 필요</i>` 태그를 제거(제목이 잘리는 느낌을 준다는 피드백 — 실제로는 태그가 제목 길이를 줄인 게 아니라 Naver 원문 제목 자체에 "..."가 있는 경우가 섞여 있었지만, 어쨌든 표시 자체를 없애기로 함). `needs_review` 필드와 로직 자체는 유지(내부 데이터), 텔레그램 표시만 제거.
+2. **위험지수 레이아웃**: `🌡️ 위험지수: 관심 — 이유`(한 줄) → `🌡️ 위험지수`(소제목) 줄바꿈 `<code>관심</code> — 이유`(다음 줄)로, 다른 섹션(교차 인사이트/핵심 경고)과 같은 "헤더+내용" 패턴으로 통일.
+3. **핵심 경고 구조화**: `key_warnings`를 평문 문자열 배열에서 `{"subject": 대상, "detail": 내용}` 객체 배열로 스키마 변경(`assessment_synthesize.py` 프롬프트·검증 로직 수정) — 텔레그램에선 `- <b>대상</b>` 다음 줄에 `  - 내용`으로 들여쓰기 2줄 렌더링.
+재검증: self-check(둘 다 OK) + 실제 DeepSeek 호출로 새 스키마 수신 확인 + 텔레그램 3/3건 재전송.
+
+추가로 들여쓰기 접두를 사용자 지정("- " 다음 줄 " >")에 맞춰 `  - ` → ` &gt; `(렌더링은 " > ")로 변경, 재전송 완료.
+
+## 다음 행동
+없음 — Task 8b 완료. `assessment_synthesize.py`/`telegram_send.py` 루트 이동 완료, `run_daily.sh`에 `weather_fetch.py`(accident_stats.py 다음)/`assessment_synthesize.py`(deepseek_summarize.py 다음, telegram_send.py 전) 호출 추가 완료. 다음은 서버에 최신 코드 재배포(git pull) 후 Task 7(1주일 시범 운영)로 자연스럽게 이어짐.

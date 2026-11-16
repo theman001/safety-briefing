@@ -14,6 +14,7 @@ import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from html import escape as _html_escape
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -25,6 +26,22 @@ MESSAGE_LIMIT = 4096
 TITLE_OVERHEAD_RESERVE = 200  # 전송 시 본문 앞에 붙는 "제목+빈줄"의 여유분 (청크 번호 포함해도 충분)
 BODY_LIMIT = MESSAGE_LIMIT - TITLE_OVERHEAD_RESERVE
 SUBSCRIBERS_PATH = "subscribers.json"
+
+
+def _esc(s: str) -> str:
+    """본문 텍스트용 — 따옴표는 안 건드린다.
+
+    html.escape(quote=True) 기본값은 "/'를 &quot;/&#x27;로 바꾸는데, 텔레그램 HTML
+    parse_mode는 본문 텍스트 안에서 이런 엔티티를 안정적으로 디코드하지 않아 실제로
+    "&quot;"가 글자 그대로 노출되는 걸 실측으로 확인했다. 본문에서는 따옴표가 HTML
+    문법상 특수문자가 아니므로 이스케이프할 필요도 없다.
+    """
+    return _html_escape(s, quote=False)
+
+
+def _esc_attr(s: str) -> str:
+    """href 속성값용 — 속성 안의 "는 구문을 깨므로 여기서만 escape(quote=True)."""
+    return _html_escape(s, quote=True)
 
 
 def tg_len(s: str) -> int:
@@ -42,7 +59,7 @@ class BotBlocked(Exception):
 
 def _send_message(token: str, chat_id: int, text: str, retries: int = 3, timeout: int = 10) -> None:
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = urlencode({"chat_id": chat_id, "text": text}).encode("utf-8")
+    data = urlencode({"chat_id": chat_id, "text": text, "parse_mode": "HTML"}).encode("utf-8")
     for attempt in range(retries):
         try:
             with urlopen(url, data=data, timeout=timeout) as res:
@@ -67,18 +84,24 @@ def _send_message(token: str, chat_id: int, text: str, retries: int = 3, timeout
 
 
 def article_block(i: int, s: dict) -> str:
-    tag = " ⚠️ 검토 필요" if s.get("needs_review") else ""
-    cause = s.get("probable_cause") or "확인되지 않음(조사 중)"
-    type_part = f" · 🔧 {s['incident_type']}" if s.get("incident_type") else ""
+    """HTML parse_mode 전제 — 뉴스 원문/AI 생성 텍스트는 전부 _esc()로 이스케이프한다.
+
+    기사 제목·URL에 <, >, &가 우연히 들어있으면(예: 'S&OIL') 이스케이프 없이는
+    텔레그램이 'can't parse entities'로 전송을 거부한다.
+    """
+    cause = _esc(s.get("probable_cause") or "확인되지 않음(조사 중)")
+    industry = _esc(s.get("industry") or "업종 미확인")
+    key_facts = _esc(s.get("key_facts") or "세부 사실 확인 전")
+    type_part = f" · 🔧 <b>{_esc(s['incident_type'])}</b>" if s.get("incident_type") else ""
     lines = [
-        f"{i}. {s['title']}{tag}",
-        f"🏭 {s['industry']}{type_part}",
-        f"📝 {s['key_facts']}",
-        f"🔍 원인: {cause}",
+        f"{i}. <b>{_esc(s['title'])}</b>",
+        f"🏭 {industry}{type_part}",
+        f"📝 {key_facts}",
+        f"🔍 <b>원인:</b> {cause}",
     ]
     if s.get("maintenance_lesson"):
-        lines.append(f"💡 교훈: {s['maintenance_lesson']}")
-    lines.append(f"🔗 {s['link']}")
+        lines.append(f"💡 <b>교훈:</b> {_esc(s['maintenance_lesson'])}")
+    lines.append(f'🔗 <a href="{_esc_attr(s["link"])}">기사 원문</a>')
     return "\n".join(lines)
 
 
@@ -118,6 +141,42 @@ def build_sections(summaries: list[dict], date: str) -> list[dict]:
     return sections
 
 
+def assessment_block(data: dict) -> str:
+    lines = [
+        "🌡️ <b>위험지수</b>",
+        f"<code>{_esc(data['risk_level'])}</code> — {_esc(data['risk_reason'])}",
+        "",
+        "🔗 <b>교차 인사이트</b>",
+    ]
+    lines.extend(f"- {_esc(x)}" for x in (data["cross_insights"] or ["(해당 없음)"]))
+    lines.append("")
+    lines.append("<u><b>⚠️ 핵심 경고</b></u>")
+    if data["key_warnings"]:
+        for w in data["key_warnings"]:
+            lines.append(f"- <b>{_esc(w['subject'])}</b>")
+            lines.append(f" &gt; {_esc(w['detail'])}")
+    else:
+        lines.append("- (해당 없음)")
+    lines.append("")
+    lines.append(f"<blockquote>☔️ <b>오늘의 한마디</b>\n{_esc(data['closing_message'])}</blockquote>")
+    return "\n".join(lines)
+
+
+def load_assessment(output_dir: str, date: str) -> dict | None:
+    """Task 8b 결과를 읽는다 — 없거나 손상됐거나 skipped면 None(3번째 섹션만 조용히 생략)."""
+    path = os.path.join(output_dir, f"comprehensive_assessment_{date}.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return None
+    if data.get("skipped") or not data.get("risk_level") or not data.get("closing_message"):
+        return None
+    return data
+
+
 def to_messages(sections: list[dict]) -> list[dict]:
     """포맷터→전송기 계약: 섹션 목록을 [{"title", "body"}]로 평탄화."""
     messages = []
@@ -148,7 +207,7 @@ def send_to_subscriber(token: str, chat_id: int, messages: list[dict]) -> tuple[
     """반환: (성공 전송 메시지 수, status('ok'/'blocked'/'failed'), error)."""
     sent = 0
     for msg in messages:
-        text = f"{msg['title']}\n\n{msg['body']}"
+        text = f"<b>{msg['title']}</b>\n\n{msg['body']}"
         try:
             _send_message(token, chat_id, text)
             sent += 1
@@ -190,8 +249,14 @@ def main(argv=None) -> int:
         return 0
 
     sections = build_sections(summary_data["summaries"], target)
+
+    assessment = load_assessment(args.output_dir, target)
+    if assessment:
+        chunks = ["\n\n".join(chunk) for chunk in chunk_blocks([assessment_block(assessment)])]
+        sections.append({"title_base": f"🧭 종합 평가 ({target})", "chunks": chunks})
+
     if not sections:
-        print("전송할 내용이 없습니다(사고/안전동향 0건).")
+        print("전송할 내용이 없습니다(사고/안전동향 0건, 종합평가도 없음).")
         return 0
     messages = to_messages(sections)
 

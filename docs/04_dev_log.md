@@ -215,7 +215,8 @@
 - `task-01b-news-classify.md`/`task-04-deepseek-summarize.md`에 "피드백 반영 (4차)" 섹션으로 설계 반영 완료(코드는 아직 안 고침, 사용자 컨펌 대기). `02_roadmap.md`에도 두 작업 재오픈 메모 추가.
 - **다음**: 사용자가 이 설계(1b는 LAW_TITLE만 확장, FOLLOWUP 범용어는 유지 + Task4가 `classification` 필드를 AI 교정값으로 반환하도록 프롬프트/스키마/파싱 변경)로 재구현해도 될지 컨펌 대기.
 - **사용자 승인("진행해") → 구현·실데이터 검증 완료.** `test/news_classify.py`/`test/deepseek_summarize.py`로 복사해 수정 후, 서버 실제 2026-11-17/11-15 데이터(144건)로 수정 전/후 diff — 의도한 1건(원전 입법→LAW_POLICY)만 바뀌고 회귀 0건. `deepseek_summarize.py`는 실제 DeepSeek API로 1b 수정 전 원본 데이터(24건) 검증 — 두 기사(보험상품→SAFETY_TREND+drop, 입법→LAW_POLICY) 모두 Task4 단독으로도 올바르게 교정됨을 확인, 기존 정상 사고 8건 회귀 없음. 두 파일 모두 `test/`에서 루트로 이동, `task-01b`/`task-04`/`02_roadmap.md` 완료로 갱신.
-- 사용자 요청으로 git commit&push, 서버 `git pull` + `run_daily.sh` 수동 1회 실행 진행 — 상세는 아래 "서버 재배포" 항목 참고.
+- 사용자 요청으로 git commit&push(`62cfac9`), 서버 `git pull`(fast-forward) + `run_daily.sh` 수동 1회 실행(대상일 2026-11-17 재처리) 진행.
+- **실전 재확인**: 실제 재전송된 `summarized_briefing_2026-11-17.json`에서 두 기사 모두 "오늘의 사고"에서 빠짐 확인 — "NH농협생명..." → `SAFETY_TREND`(이번 run에선 drop 안 되고 안전동향에 유지, run-to-run 차이지만 사고 섹션엔 안 들어감 — 목적 달성), "원전 사고 은폐..." → 1b 단계에서 바로 `LAW_POLICY`(실제 분류 카운트에 `LAW_POLICY 1건`으로 반영). 구독자 2명(소유자+재호) 전원 정상 수신(`2/2명 전체 수신 성공`) — 3번째 구독자(oioio_01)는 그 사이 자진 구독해제/차단해 자동 제거됨(유령 구독자 방지 정상 동작, 버그 아님).
 
 ### 2026-11-17 — Task 9(위치 설정 유틸리티) 구현·검증·승인
 - 사용자 요청: `WEATHER_NX`/`WEATHER_NY`를 서울 외 지역으로 바꿀 때 쓸, 주소 → nx/ny 변환 스크립트. 지오코딩 provider는 3개 옵션(카카오 로컬/기존 Naver API 재사용/data.go.kr 주소API) 중 **카카오 로컬 API**로 사용자가 직접 선택(문서가 명확하고 WGS84를 바로 반환, 좌표계 불확실성 없음).

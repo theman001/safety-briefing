@@ -87,8 +87,10 @@ CIVIC_TITLE = [
     "주요일정", "주요 일정", "시장 선거", "공공기관 인사", "브리핑 모음",
 ]
 # 입법/제도 기사(제목에 "OO법 개정안" 식으로 사고 키워드가 우연히 섞여 사고 보도로
-# 오분류되는 걸 막기 위한 제목 전용 단서. 2026-11-16 실데이터: "화재예방법 개정안 발의"가
-# "화재"의 부분 문자열 매칭으로 INCIDENT_REPORT가 됨.
+# 오분류되는 걸 막기 위한 단서. 2026-11-16 실데이터: "화재예방법 개정안 발의"가
+# "화재"의 부분 문자열 매칭으로 INCIDENT_REPORT가 됨. 2026-11-18: title만 보던 걸
+# description까지 확장 — Naver API의 제목 절단으로 "발의" 등이 제목에서 사라지는
+# 경우(원전 입법 기사 실데이터)가 확인됨.
 LAW_TITLE = ["법안", "개정안", "제정안", "발의", "입법", "시행령"]
 
 LABELS = ["INCIDENT_REPORT", "INCIDENT_FOLLOWUP", "SAFETY_TREND", "MAINTENANCE_TECH", "LAW_POLICY", "OTHER", "REVIEW", "EXCLUDED"]
@@ -128,7 +130,10 @@ def classify(title: str, description: str) -> dict:
     is_industrial = bool(industries) or bool(tit_context or hit(description, INDUSTRIAL_CONTEXT))
 
     tit_evt = hit(title, EVENT_STRONG)
-    law = hit(title, LAW_TITLE)
+    # title만 보던 걸 description까지 확장(2026-11-18): Naver API가 제목을 잘라
+    # "법안 발의" 중 "발의"가 날아가는 경우(원전 입법 기사 실데이터)가 확인됨 —
+    # 새 키워드 추가가 아니라 기존 안전장치의 적용 범위만 넓히는 것.
+    law = hit(title, LAW_TITLE) or hit(description, LAW_TITLE)
     follow = hit(title, FOLLOWUP) or hit(description, FOLLOWUP)
     exercise = hit(title, EXERCISE) or hit(description, EXERCISE)
     civic = hit(title, CIVIC_TITLE)

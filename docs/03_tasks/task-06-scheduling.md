@@ -46,5 +46,12 @@
   - [x] **서버 실배포 + `run_daily.sh` 실제 실행 2회 검증** — `~/safety-briefing`을 비우고 `git clone`, `.env` scp로 전달(600 권한), 1차 실행에서 전체 파이프라인(1a→1b→2b→3→4→5a→5b) 실데이터로 끝까지 성공, 실제 텔레그램 전송 확인. **중요한 발견**: 1차 실행 때 "구독이 시작되었습니다" 환영 메시지가 다시 발송됨 — 원인은 `subscribers.json`이 `.gitignore` 대상이라 새로 clone한 서버엔 없었고, `last_update_id: 0`부터 시작해 최근 24시간 내 `/start` 이벤트(테스트 중 보낸 것)를 다시 읽어 재등록 처리한 것. **버그 아님**: 2차 실행에서 "신규 이벤트 없음"으로 정상 동작, 환영 메시지도 다시 안 옴 — `subscribers.json`이 서버에 한 번 생기면 이후 cron 실행에서는 반복 안 됨(사용자 실제 수신 확인: "메시지 안왔다").
   - [x] cron2(30일 정리) 로직 검증 — `touch -d`로 35일 전/10일 전 가짜 파일을 만들어 `find ... -mtime +30 -delete` 실행, 35일 전 파일만 삭제되고 10일 전 파일은 남는 것 확인. 테스트 파일은 삭제해 정리.
 
+## 추가 반영 (2026-11-17, Task 7 시범 운영 중 발견)
+- **실제 버그**: 다른 사용자가 `/start`를 보냈는데 `subscribers.json`에 추가되지 않고 환영 메시지도 안 옴 — 봇 소유자 여부와는 무관(코드상 그런 구분 없음, 실제로 수동 재실행하자 즉시 정상 등록됨). **원인**: `subscriber_manage.py`가 `run_daily.sh` 안에서 하루 1번(08:00)만 `getUpdates`를 폴링하므로, 그 시각 이후 `/start`한 사람은 다음날 08:00까지 Telegram 서버에 대기만 되고 처리가 안 됨.
+- **해결**: `subscriber_manage.py`만 따로 더 자주 도는 cron3 추가 — `getUpdates`가 신규 여부 확인 자체이므로(사전 체크로 호출을 아낄 방법 없음, 이미 `timeout:0`으로 단발 호출 최소화된 상태) 호출 자체는 가볍다고 판단, 15분 간격(정각충돌 방지로 `5,20,35,50 * * * *`, cron1의 `0 8 * * *`과 겹치지 않게 분을 밀어 `subscribers.json` 동시 read-modify-write 경쟁 방지)으로 서버 crontab에 추가:
+  - `cron3`: `5,20,35,50 * * * * cd /home/ubuntu/safety-briefing && python3 subscriber_manage.py >> logs/subscriber_poll.log 2>&1 # safety-briefing-subscriber-poll`
+  - 서버에서 수동 실행으로 즉시 검증: 대기 중이던 실사용자 2명(`chat_id=9080688379`, `7140385166`)이 정상 등록되고 환영 메시지 전송됨 확인(구독자 1명→3명).
+- `run_daily.sh` 안의 `subscriber_manage.py` 호출은 그대로 유지(cron1 실행 때도 한 번 더 확인하는 거라 중복 호출이지만, 멱등 처리라 문제 없음).
+
 ## 다음 행동
-없음 — Task 6 완료. 다음은 Task 7(엔드투엔드 1주일 시범 운영): 실제 cron이 매일 08:00 KST에 돌면서 분류/요약 품질을 며칠 지켜보는 단계.
+없음 — Task 6 완료(+ 위 cron3 보강). 계속 Task 7(엔드투엔드 1주일 시범 운영): 실제 cron이 매일 08:00 KST에 돌면서 분류/요약 품질을 며칠 지켜보는 단계.

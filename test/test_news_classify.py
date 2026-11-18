@@ -35,9 +35,33 @@ def test_known_good_followup_with_title_evidence_unaffected():
     assert result["classification"] == "INCIDENT_FOLLOWUP", result
 
 
+def test_law_bill_with_truncated_title_caught_via_description():
+    # 2026-11-18 Task7 실운영 실데이터: Naver API가 제목을 "...추..."로 잘라
+    # "발의"가 사라져서 title-only LAW_TITLE 검사가 못 잡았던 사례. description까지
+    # 보도록 확장한 수정이 이 케이스를 잡는지 확인.
+    title = "원전 사고 '은폐 사각지대' 막는다…종업원·교사·공모자까지 처벌 추..."
+    desc = "원전 사고 은폐를 막기 위해 종업원뿐 아니라 교사·공모자까지 처벌할 수 있도록 하는 법안이 발의됐다. 2012년 고리1호기 사건과 2024년 월성4호기 사례가 배경으로 꼽힌다."
+    result = classify(title, desc)
+    assert result["classification"] == "LAW_POLICY", result
+
+
+def test_generic_followup_word_in_non_incident_article_still_unfixed_at_1b():
+    # 2026-11-18 결정: 이 종류(보험상품 소개 기사가 "보상" 단어로 INCIDENT_FOLLOWUP에
+    # 걸림)는 1b 키워드 레벨에서 더 패치하지 않기로 함 — 최종 교정은 Task 4(AI)의
+    # 몫이다. 이 테스트는 "1b는 의도적으로 그대로 둔다"는 현재 설계를 문서화한다 —
+    # 나중에 이 값이 바뀌면 task-01b-news-classify.md의 "피드백 반영(4차)"도 같이
+    # 갱신해야 한다는 신호로 삼는다.
+    title = "농업도 일터다... NH농협생명이 메우는 산재 안전망의 빈자리"
+    desc = "NH농협생명이 자영농·가족종사자 대상 산재 안전망의 빈자리를 보완하는 보험·보상 체계를 소개."
+    result = classify(title, desc)
+    assert result["classification"] == "INCIDENT_FOLLOWUP", result
+
+
 if __name__ == "__main__":
     test_law_bill_not_misread_as_incident()
     test_roundup_article_with_only_description_hits_goes_to_other()
     test_known_good_incident_report_unaffected()
     test_known_good_followup_with_title_evidence_unaffected()
+    test_law_bill_with_truncated_title_caught_via_description()
+    test_generic_followup_word_in_non_incident_article_still_unfixed_at_1b()
     print("OK")

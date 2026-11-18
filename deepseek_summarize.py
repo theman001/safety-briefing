@@ -24,11 +24,25 @@ KST = timezone(timedelta(hours=9))
 API_URL = "https://api.deepseek.com/chat/completions"
 MODEL = "deepseek-flash"
 
+VALID_CLASSIFICATIONS = {
+    "INCIDENT_REPORT", "INCIDENT_FOLLOWUP", "SAFETY_TREND", "MAINTENANCE_TECH", "LAW_POLICY",
+}
+
 SYSTEM_PROMPT = (
     "너는 산업안전 사고 뉴스를 구조화 요약하는 보조원이다. "
     "사실 확인 전 사고 원인이나 발생일을 단정하지 않는다 — 원문(title/description)에 "
     "명시되지 않은 원인은 추측해서 채우지 말고 probable_cause를 null로 두고 "
     "needs_review를 true로 표시한다. "
+    "입력 각 기사의 classification은 키워드 기반 1차 분류 결과로, 참고용 추정치일 뿐이다. "
+    "그대로 믿지 말고 title/description 본문을 직접 읽고 그 분류가 실제로 맞는지 판단해 "
+    "최종 classification을 결정하라. 예를 들어 1차 분류가 INCIDENT_REPORT나 "
+    "INCIDENT_FOLLOWUP(사고 보도)으로 왔어도 실제 내용이 보험상품 소개, 법안/제도 추진, "
+    "통계 발표처럼 특정 사고 1건을 보도하는 게 아니면 SAFETY_TREND 또는 LAW_POLICY로 "
+    "교정하라. 반대로 1차 분류가 안전동향 등으로 왔어도 실제로 특정 사고를 보도하는 기사면 "
+    "INCIDENT_REPORT나 INCIDENT_FOLLOWUP으로 교정하라. 최종 classification은 "
+    "INCIDENT_REPORT/INCIDENT_FOLLOWUP/SAFETY_TREND/MAINTENANCE_TECH/LAW_POLICY 중 "
+    "하나여야 한다(입력으로 들어오는 기사는 이미 이 5개 중 하나로 1차 분류된 것들만이므로, "
+    "교정값도 이 범위 안에서 고른다). dropped가 true인 기사도 classification은 채운다. "
     "입력 기사에 stat_context가 있어도, 먼저 기사 본문(title/description)이 실제로 그 업종의 "
     "사고·설비 현장과 관련된 내용인지 판단하라. 정치/행정/일반 기사처럼 설비·사고와 무관한데 "
     "업종 매칭만 잘못 걸린 경우에는 stat_context를 무시하고 maintenance_lesson을 기사 실제 "
@@ -52,10 +66,10 @@ SYSTEM_PROMPT = (
     "입력으로 주어진 기사 배열과 정확히 같은 개수의 결과를(모든 index에 대해 응답 필수, "
     "dropped인 기사도 반드시 포함), 각 원소에 원본 index를 포함해 "
     '{"summaries": [...]} 형태의 JSON 객체로만 응답한다. '
-    "각 summaries 원소는 index(int), dropped(bool), drop_reason(string|null), "
-    "industry(string|null), incident_type(string|null), key_facts(string|null), "
-    "probable_cause(string|null), maintenance_lesson(string|null), needs_review(bool) "
-    "필드를 가진다."
+    "각 summaries 원소는 index(int), classification(string), dropped(bool), "
+    "drop_reason(string|null), industry(string|null), incident_type(string|null), "
+    "key_facts(string|null), probable_cause(string|null), maintenance_lesson(string|null), "
+    "needs_review(bool) 필드를 가진다."
 )
 
 
@@ -143,10 +157,15 @@ def parse_summaries(response: dict, articles: list[dict]) -> list[dict]:
         if i not in by_index:
             raise RuntimeError(f"index {i}에 해당하는 요약이 없음")
         s = by_index[i]
+        classification = s.get("classification")
+        if classification not in VALID_CLASSIFICATIONS:
+            print(f"index {i}: AI가 유효하지 않은 classification({classification!r})을 반환 — "
+                  f"1차 분류({article.get('classification')!r})로 폴백", file=sys.stderr)
+            classification = article.get("classification")
         result.append({
             "title": article.get("title"),
             "link": article.get("link"),
-            "classification": article.get("classification"),
+            "classification": classification,
             "dropped": bool(s.get("dropped", False)),
             "drop_reason": s.get("drop_reason"),
             "industry": s.get("industry"),

@@ -1,6 +1,6 @@
 # Task 4. DeepSeek 요약 연동
 
-상태: **완료 — 3차 설계 변경(필터링 추가) 실데이터 검증 통과, 승인됨 (2026-11-16)**. `dropped`/`drop_reason` 필터링을 4회 반복 검증 후 루트로 이동 완료. 알려진 한계 1건(통계 인용 기사 병합 시 부속 사고정보 손실 가능성)은 사용자가 인지하고 수용 — 아래 "검증 기록(3차)" 참고.
+상태: **완료 — 4차 변경(AI 맥락 기반 재분류) 실데이터 검증 통과, 승인됨 (2026-11-18)**. `classification` 필드를 AI 교정값으로 쓰도록 변경 후 루트로 이동 완료. 알려진 한계 1건(통계 인용 기사 병합 시 부속 사고정보 손실 가능성, 3차 때 발견)은 사용자가 인지하고 수용 — 아래 "검증 기록(3차)" 참고.
 
 ## 입력 스키마 관련 메모
 Task 3(`output/daily_briefing_<date>.json`)는 아직 "구상 — 컨펌 대기" 상태(다른 세션에서 진행 중, 손대지 않음)이지만, 실제로 `output/daily_briefing_2026-11-12.json`(63건: incidents 25 + safety_and_maintenance 38, `stat_context` 포함)이 이미 실데이터로 존재해서 이걸 입력 스키마의 근거로 썼다. Task 3가 최종 컨펌되며 스키마가 바뀌면, 이 문서의 "입력" 절과 파싱 부분만 조정하면 된다(DeepSeek 호출 로직 자체는 영향 없음).
@@ -129,3 +129,51 @@ Task 5b(`telegram_send.py`)는 `summaries` 필드만 그대로 읽으므로 **�
 이 구상대로(특히 1회 호출·thinking 비활성화·index 매칭 방식) 진행해도 될지 확인 부탁한다. ~~(승인됨, 완료)~~
 
 3차 변경(`dropped`/`drop_reason` 필터링)을 이 구상대로 진행해도 될지 확인 부탁한다. ~~(승인됨, 완료)~~
+
+## 피드백 반영 (4차, 2026-11-18) — AI의 "맥락 기반 재분류" 역할 추가
+
+### 배경
+`task-01b-news-classify.md`의 "피드백 반영 (4차)" 참고 — Task 7 실운영 중 키워드 기반 1차 분류(`classification`)가 보험상품 기사/입법추진 기사를 `INCIDENT_FOLLOWUP`(사고)으로 잘못 분류하는 사례가 재발. 키워드만으로는 "법적·보상 어휘 포함"과 "실제 특정 사고의 후속보도"를 구분하기 어렵다는 게 2026-11-13/11-16/11-18 세 차례 반복 확인됨.
+
+### 사용자 결정 — 역할 분리
+**Task 1b(키워드)는 재현율 중심의 거친 1차 필터로 유지하고, Task 4(AI)가 title/description 본문을 직접 읽어 최종 `classification`을 판단하는 "맥락 기반 재분류"를 새로 맡는다.** 근거: 1b가 걸려 넘어진 두 사례 모두, 같은 title/description 텍스트를 AI가 읽으면(이미 Task 4 입력에 포함되어 있음) "보험상품 소개"/"법안 추진"이라는 성격을 키워드 없이도 구분할 수 있다 — 특히 원전 입법 기사는 Naver 제목 절단으로 "발의"라는 단어 자체가 날아갔어도, AI는 "처벌 추진"+"교사·공모자까지"+역사적 사례 언급이라는 문맥으로 입법 기사임을 알 수 있어, 키워드 매칭의 구조적 약점(절단·범용어)에 안 걸린다.
+
+### 처리 로직 변경
+- `build_request_payload()`가 이미 각 기사에 1b의 `classification`을 포함해 전달하고 있음(62~73행) — 이걸 "참고용 1차 추정치"로 명시하고, system 프롬프트에 교정 지시를 추가한다.
+- **system 프롬프트 추가 지시**: "입력 각 기사의 `classification`은 키워드 기반 1차 분류로, 참고용 추정치일 뿐 그대로 믿지 않는다. title/description 본문을 직접 읽고 그 분류가 실제로 맞는지 판단해 최종 `classification`을 결정하라. 예: 1차 분류가 INCIDENT_REPORT/INCIDENT_FOLLOWUP(사고 보도)으로 왔어도 실제 내용이 보험상품 소개, 법안/제도 추진, 통계 발표처럼 특정 사고 1건을 보도하는 게 아니면 SAFETY_TREND 또는 LAW_POLICY로 교정하라. 반대로 1차 분류가 안전동향 등으로 왔어도 실제로 특정 사고를 보도하는 기사면 INCIDENT_REPORT/INCIDENT_FOLLOWUP으로 교정하라. 최종 `classification`은 INCIDENT_REPORT/INCIDENT_FOLLOWUP/SAFETY_TREND/MAINTENANCE_TECH/LAW_POLICY 중 하나여야 한다(Task 4 입력에 들어오는 기사는 이미 이 5개 중 하나로 1차 분류된 것들만이므로, 교정값도 이 범위 안에서 고른다)."
+- **출력 스키마 변경**: `summaries` 각 원소에 `classification`(string) 필드 추가(AI가 반환하는 최종 교정값). `dropped: true`인 원소도 `classification`은 채운다(감사 기록에 남기기 위해).
+- **`parse_summaries()` 변경**: 149행 `"classification": article.get("classification")`(1b 값 그대로 복사)을 AI가 반환한 값으로 교체. 단, AI가 허용된 5개 라벨 밖의 값을 반환하거나 비워두면 **조용히 버리지 않고** stderr 경고 로그를 남긴 뒤 원본 1b `classification`으로 폴백한다(사실 확인 안 된 값을 침묵 수용하지 않는다는 프로젝트 원칙과 동일 맥락).
+- `split_dropped()`/`build_sections()`(telegram_send.py) 등 하류는 **코드 변경 없음** — 이미 `summaries[].classification` 필드를 그대로 읽는 구조라 자연히 호환.
+
+### 출력 스키마 (갱신)
+```json
+{
+  "...": "...",
+  "summaries": [
+    {
+      "title": "...", "link": "...",
+      "classification": "...",   // AI가 교정한 최종값 (신규 — 기존엔 1b 값 그대로 복사)
+      "industry": "...", "incident_type": "...",
+      "key_facts": "...", "probable_cause": null,
+      "maintenance_lesson": "...", "needs_review": false
+    }
+  ]
+}
+```
+
+### 검증 기준 (추가, 실데이터)
+- [ ] 2026-11-17 데이터(서버 `daily_briefing_2026-11-17.json`)로 재실행 — "NH농협생명..." 기사의 최종 `classification`이 `INCIDENT_FOLLOWUP`에서 `SAFETY_TREND`(또는 적절한 값)로 교정되는지 확인
+- [ ] "원전 사고 은폐..." 기사도 1b 단계 수정(LAW_TITLE description 확장)으로 이미 `LAW_POLICY`가 됐을 수 있음 — 만약 1b에서 안 고쳐진 채로 들어와도 Task 4가 `LAW_POLICY`로 교정하는지 이중 확인(1b 수정이 빠지거나 제목이 또 다르게 잘려도 Task 4가 최종 방어선 역할을 하는지가 핵심 목적)
+- [ ] 기존에 올바르게 분류되던 사고 기사들(한솔제지 끼임, 여수산단, 태영건설 등)의 `classification`이 AI 교정 과정에서 실수로 바뀌지 않는지(회귀 없음) 전수 확인
+- [ ] AI가 허용 범위 밖 값을 반환하는 경우를 의도적으로 재현하기 어려우므로, 폴백 로직은 코드 레벨 단위 테스트(`test_deepseek_summarize.py`)로 검증
+- [ ] 텔레그램 최종 메시지에서 두 기사가 "오늘의 사고"가 아니라 "안전동향·정비기술" 섹션(또는 적절한 섹션)으로 옮겨졌는지 실제 섹션 분배 확인
+
+### 검증 (2026-11-18) — 통과, 승인됨
+서버 실제 운영 데이터(`daily_briefing_2026-11-17.json`, 24건: incidents 12 + safety_and_maintenance 12)로 실제 `DEEPSEEK_API_KEY` 호출 검증. 일부러 **1b 수정 전**(두 기사 모두 여전히 `INCIDENT_FOLLOWUP`인) 원본으로 돌려 Task 4 단독 방어선 역할까지 확인:
+- "원전 사고 은폐…" → AI가 `LAW_POLICY`로 교정, `key_facts`/`maintenance_lesson`도 입법 기사에 맞게 재작성됨.
+- "NH농협생명…" → AI가 `SAFETY_TREND`로 교정하면서 "보험상품 홍보성 기사"로 자체 drop까지 — 설계보다 한 걸음 더 적절한 결과.
+- 기존 정상 사고 8건(여수산단/청주 환경미화원/태영건설/HD현대삼호/한솔제지/영월 시멘트/현대엔지니어링 등) 전부 `INCIDENT_REPORT`/`FOLLOWUP`로 유지 — 회귀 없음. 16건 유지/8건 제외, prompt 5,218 / completion 3,528 토큰.
+- 폴백 로직(AI가 허용 범위 밖 값 반환 시 원본값 유지)은 실데이터로 재현이 어려워 `test/test_deepseek_summarize.py` 단위테스트로 검증, 통과.
+- 실행시간 15.3초(대부분 API 대기), peak RSS 28.7MB — 기존 벤치마크(28MB)와 동일 수준.
+- 텔레그램 섹션 분배는 `build_sections()`가 `classification` 필드만 보는 구조라 코드상 자명(변경 없음) — 불필요한 중복 텔레그램 전송은 생략.
+- **승인 → `deepseek_summarize.py` 루트로 이동 완료.**

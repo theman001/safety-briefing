@@ -30,11 +30,13 @@ VALID_CLASSIFICATIONS = {
 
 SYSTEM_PROMPT = (
     "너는 산업안전 사고 뉴스를 구조화 요약하는 보조원이다. "
-    "사실 확인 전 사고 원인이나 발생일을 단정하지 않는다 — 원문(title/description)에 "
+    "각 기사에 full_text(원문 전체)가 있으면 이를 description보다 우선적인 근거로 쓰고, "
+    "full_text가 없으면(null) title/description만으로 판단한다. "
+    "사실 확인 전 사고 원인이나 발생일을 단정하지 않는다 — 그렇게 확인한 원문에도 "
     "명시되지 않은 원인은 추측해서 채우지 말고 probable_cause를 null로 두고 "
     "needs_review를 true로 표시한다. "
     "입력 각 기사의 classification은 키워드 기반 1차 분류 결과로, 참고용 추정치일 뿐이다. "
-    "그대로 믿지 말고 title/description 본문을 직접 읽고 그 분류가 실제로 맞는지 판단해 "
+    "그대로 믿지 말고 title/description(또는 있으면 full_text) 본문을 직접 읽고 그 분류가 실제로 맞는지 판단해 "
     "최종 classification을 결정하라. 예를 들어 1차 분류가 INCIDENT_REPORT나 "
     "INCIDENT_FOLLOWUP(사고 보도)으로 왔어도 실제 내용이 보험상품 소개, 법안/제도 추진, "
     "통계 발표처럼 특정 사고 1건을 보도하는 게 아니면 SAFETY_TREND 또는 LAW_POLICY로 "
@@ -79,6 +81,7 @@ def build_request_payload(articles: list[dict]) -> dict:
             "index": i,
             "title": a.get("title", ""),
             "description": a.get("description", ""),
+            "full_text": a.get("full_text"),
             "classification": a.get("classification", ""),
             "matched_industry_terms": a.get("matched_industry_terms", []),
             "stat_context": a.get("stat_context"),
@@ -178,6 +181,22 @@ def parse_summaries(response: dict, articles: list[dict]) -> list[dict]:
     return result
 
 
+def resolve_input_path(input_dir: Path, date: str | None) -> Path | None:
+    """Task 3b(enriched) 우선, 없으면 Task 3(plain)로 폴백. 둘 다 없으면 None."""
+    if date is None:
+        candidates = sorted(input_dir.glob("daily_briefing_2*.json"))
+        if not candidates:
+            return None
+        date = candidates[-1].stem.removeprefix("daily_briefing_")
+    enriched_path = input_dir / f"daily_briefing_enriched_{date}.json"
+    plain_path = input_dir / f"daily_briefing_{date}.json"
+    if enriched_path.exists():
+        return enriched_path
+    if plain_path.exists():
+        return plain_path
+    return plain_path  # 둘 다 없어도 에러 메시지에 보여줄 경로가 필요하므로 plain_path 반환
+
+
 def split_dropped(results: list[dict]) -> tuple[list[dict], list[dict]]:
     """반환: (kept, dropped) — dropped는 감사(audit)용으로 title/link/classification/drop_reason만 남김."""
     kept = []
@@ -206,15 +225,12 @@ def main(argv=None) -> int:
         print("환경변수 DEEPSEEK_API_KEY가 설정되지 않았습니다.", file=sys.stderr)
         return 2
 
-    if args.date:
-        in_path = args.input_dir / f"daily_briefing_{args.date}.json"
-    else:
-        candidates = sorted(args.input_dir.glob("daily_briefing_*.json"))
-        if not candidates:
-            print(f"{args.input_dir}에 daily_briefing_*.json이 없습니다. Task 3를 먼저 실행하세요.", file=sys.stderr)
-            return 2
-        in_path = candidates[-1]
-
+    # Task 3b(원문 전체 수집)가 선택적 단계이므로, enriched 버전이 있으면 우선 쓰고
+    # 없으면(Task 3b를 안 돌렸거나 실패) description만 있는 기존 파일로 자연 폴백.
+    in_path = resolve_input_path(args.input_dir, args.date)
+    if in_path is None:
+        print(f"{args.input_dir}에 daily_briefing_*.json이 없습니다. Task 3를 먼저 실행하세요.", file=sys.stderr)
+        return 2
     if not in_path.exists():
         print(f"{in_path} 없음. Task 3를 먼저 실행하세요.", file=sys.stderr)
         return 2

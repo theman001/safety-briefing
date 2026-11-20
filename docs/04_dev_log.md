@@ -258,4 +258,10 @@
 - **결정**: 두 버그 다 정규식으로 중첩 HTML을 다루는 근본적 한계라서 패턴을 더 추가해도 다른 사이트에서 재발할 것으로 판단 — `html.parser.HTMLParser`(표준 라이브러리) 기반으로 재작성. 태그 depth를 추적해 짝 맞는 진짜 닫는 태그까지만 수집(조기 종료 문제가 구조적으로 해결), 주석은 `handle_comment`에서 수집 대상 제외(누수 문제도 구조적으로 해결). 신규 의존성 없음.
 - `task-03b-fulltext-fetch.md`에 검증 기록·재설계 반영 완료. 사용자 승인("진행해") → 재구현 진행.
 - **2차 검증(HTMLParser 방식) 통과**: 같은 실데이터(24건) 재실행 — 쓰레기였던 4건 전부 해결(예: NH농협생명 12자→3,491자), `full_text`가 `description`보다 짧은 경우 0건(1차 4건), 마크업/스크립트 잔재 전수 grep 0건, 회귀 없음, peak RSS 30.4MB/5.15초(1차와 동일 수준). 깨진 HTML로도 크래시 없음.
-- **사용자 승인("진행해") → `fulltext_fetch.py` 루트로 이동, `02_roadmap.md` 체크박스 갱신 완료.** 이어서 git commit&push, 서버 `git pull` + 스크립트 1회 수동 실행 진행 중.
+- **사용자 승인("진행해") → `fulltext_fetch.py` 루트로 이동, `02_roadmap.md` 체크박스 갱신 완료.** 이어서 git commit&push(`54af797`), 서버 `git pull` + 스크립트 1회 수동 실행(2026-11-19 실데이터 40건, peak RSS 26.2MB, 품질 이상 0건) 완료.
+
+### 2026-11-20 — Task 4 6차: full_text 반영, 실데이터 검증·승인
+- 사용자 "이어서 진행해"로 Task 3b 직후 지정했던 다음 단계(Task 4가 `full_text`를 쓰도록 변경) 진행. 5차(저관련성 기준 확장)는 아직 미구현인 채로 순서상 뒤로 미룸.
+- 설계: `daily_briefing_enriched_<date>.json`이 있으면 우선 읽고(없으면 기존 `daily_briefing_<date>.json`으로 폴백) → `resolve_input_path()`로 분리해 단위테스트 가능하게 함. `build_request_payload()`에 `full_text` 필드 추가(description은 유지, 둘 다 전달). SYSTEM_PROMPT에 "full_text 있으면 description보다 우선 근거로 사용" 지시 추가.
+- 실데이터(24건, full_text 20건) 실제 DeepSeek 호출 검증: "태영건설"·"한솔제지" 사고의 `probable_cause`가 description만으론 안 나오던 구체적 기계적 원인으로 채워짐(원문 대조로 날조 없음 확인). 기존 분류 회귀 없음, 중복판정도 더 정밀해짐. **비용 실측: `prompt_tokens` 5,218→29,378(약 5.6배 증가)** — 사용자에게 솔직히 보고 후 승인받음. enriched 없는 날(11-15) 폴백도 실제 실행으로 확인.
+- **사용자 승인("승인할게. 진행해.") → `deepseek_summarize.py` 루트로 이동, `task-04-deepseek-summarize.md`/`02_roadmap.md` 갱신 완료.** 5차(정치 행보·지역 홍보성 기사 제외, 사고 대비 동향 비중)는 여전히 미구현 상태로 남음 — 다음 작업.

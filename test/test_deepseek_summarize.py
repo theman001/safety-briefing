@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """deepseek_summarize.py 핵심 로직(페이로드 구성, 응답 파싱, dropped 분리) self-check. 네트워크 호출 없음."""
 import json
+import tempfile
+from pathlib import Path
 
-from deepseek_summarize import MODEL, build_request_payload, parse_summaries, split_dropped
+from deepseek_summarize import MODEL, build_request_payload, parse_summaries, resolve_input_path, split_dropped
 
 
 def test_build_request_payload_shape():
@@ -15,6 +17,15 @@ def test_build_request_payload_shape():
     user_content = json.loads(payload["messages"][1]["content"])
     assert user_content[0]["index"] == 0
     assert user_content[0]["title"] == "a"
+    assert user_content[0]["full_text"] is None  # 2026-11-20: Task3b 안 거친 기사는 키 없어도 안전하게 null
+
+
+def test_build_request_payload_includes_full_text_when_present():
+    articles = [{"title": "a", "description": "짧은 요약", "full_text": "원문 전체 내용...", "classification": "INCIDENT_REPORT"}]
+    payload = build_request_payload(articles)
+    user_content = json.loads(payload["messages"][1]["content"])
+    assert user_content[0]["full_text"] == "원문 전체 내용..."
+    assert user_content[0]["description"] == "짧은 요약"  # full_text가 있어도 description은 유지(폴백 대비)
 
 
 def test_parse_summaries_matches_by_index_and_preserves_original_fields():
@@ -79,6 +90,28 @@ def test_parse_summaries_detects_count_mismatch():
         raise AssertionError("건수 불일치를 감지하지 못함")
 
 
+def test_resolve_input_path_prefers_enriched_when_present():
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "daily_briefing_2026-11-19.json").write_text("{}")
+        (d / "daily_briefing_enriched_2026-11-19.json").write_text("{}")
+        assert resolve_input_path(d, "2026-11-19").name == "daily_briefing_enriched_2026-11-19.json"
+        assert resolve_input_path(d, None).name == "daily_briefing_enriched_2026-11-19.json"
+
+
+def test_resolve_input_path_falls_back_to_plain_when_no_enriched():
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "daily_briefing_2026-11-19.json").write_text("{}")
+        assert resolve_input_path(d, "2026-11-19").name == "daily_briefing_2026-11-19.json"
+        assert resolve_input_path(d, None).name == "daily_briefing_2026-11-19.json"
+
+
+def test_resolve_input_path_returns_none_when_nothing_exists():
+    with tempfile.TemporaryDirectory() as d:
+        assert resolve_input_path(Path(d), None) is None
+
+
 def test_split_dropped_separates_and_strips_fields():
     results = [
         {"title": "t0", "link": "l0", "classification": "C0", "dropped": False, "drop_reason": None,
@@ -97,9 +130,13 @@ def test_split_dropped_separates_and_strips_fields():
 
 if __name__ == "__main__":
     test_build_request_payload_shape()
+    test_build_request_payload_includes_full_text_when_present()
     test_parse_summaries_matches_by_index_and_preserves_original_fields()
     test_parse_summaries_uses_ai_corrected_classification()
     test_parse_summaries_falls_back_to_original_classification_when_ai_value_invalid()
     test_parse_summaries_detects_count_mismatch()
+    test_resolve_input_path_prefers_enriched_when_present()
+    test_resolve_input_path_falls_back_to_plain_when_no_enriched()
+    test_resolve_input_path_returns_none_when_nothing_exists()
     test_split_dropped_separates_and_strips_fields()
     print("OK")

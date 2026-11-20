@@ -1,6 +1,33 @@
 # Task 4. DeepSeek 요약 연동
 
-상태: **구상 — 5차 변경(저관련성 기준 확장: 정치 행보·지역/기관 홍보성 기사 제외) 컨펌 대기 (2026-11-20)**. 4차 변경(AI 맥락 기반 재분류)까지는 실데이터 검증 통과, 승인됨(2026-11-18). 알려진 한계 1건(통계 인용 기사 병합 시 부속 사고정보 손실 가능성, 3차 때 발견)은 사용자가 인지하고 수용 — 아래 "검증 기록(3차)" 참고.
+상태: **6차 변경(Task 3b full_text 활용) 실데이터 검증 통과, 승인됨 (2026-11-20) → `deepseek_summarize.py` 루트로 이동 완료.** 5차 변경(저관련성 기준 확장: 정치 행보·지역/기관 홍보성 기사 제외)은 **아직 미구현, 컨펌 대기 중**(6차와 별개 — 사용자가 "이어서 진행해"로 6차를 먼저 진행하도록 순서 지정, 5차는 다음에 이어서 처리). 4차 변경(AI 맥락 기반 재분류)까지는 실데이터 검증 통과, 승인됨(2026-11-18). 알려진 한계 1건(통계 인용 기사 병합 시 부속 사고정보 손실 가능성, 3차 때 발견)은 사용자가 인지하고 수용 — 아래 "검증 기록(3차)" 참고.
+
+## 피드백 반영 (6차, 2026-11-20) — Task 3b 원문 전체(full_text) 활용
+
+### 배경
+Task 3b(`fulltext_fetch.py`, 완료·승인됨)가 `daily_briefing_enriched_<date>.json`에 기사별 `full_text`(원문 전체, 매칭 안 되면 null)를 생성해두는데, Task 4는 아직 이걸 안 쓰고 여전히 `daily_briefing_<date>.json`(description만)을 읽는다. Task 3b 설계 당시 "Task4 쪽 변경은 별도 /reflect로 다룬다"고 명시해뒀던 부분.
+
+### 설계
+1. **입력 경로 우선순위**: 같은 날짜의 `daily_briefing_enriched_<date>.json`이 있으면 그걸 쓰고, 없으면(Task 3b를 안 돌렸거나 실패한 경우) 기존 `daily_briefing_<date>.json`으로 자연 폴백 — Task 3b가 선택적 단계라는 전제를 유지한다. `--date` 없이 "최신 파일 찾기"도 동일 원칙: `daily_briefing_2*.json`(숫자로 시작 — "enriched" 변형과 글롭 패턴이 안 겹치게)으로 최신 날짜를 먼저 찾고, 그 날짜의 enriched 버전이 있으면 그걸 우선 채택.
+2. **payload에 `full_text` 필드 추가**: `build_request_payload()`가 기존 `description` 옆에 `full_text`(string|null, Task 3b가 안 돌았으면 키 자체가 없을 수 있어 `.get()`으로 안전하게 처리)를 그대로 추가 전달. 필드를 통합(description 제거)하지 않고 둘 다 보내는 이유: 모델이 매칭 실패(`full_text: null`)를 쉽게 구분할 수 있고, 구조 변경 위험을 최소화(YAGNI).
+3. **SYSTEM_PROMPT 수정**: 원인 단정 금지 지시 문장에 "`full_text`가 있으면 description보다 우선 근거로 쓰고, 없으면 title/description만으로 판단"을 추가. 분류 교정 지시 문장의 "title/description 본문을 직접 읽고"도 "(또는 있으면 full_text)"를 추가해 교정 판단에도 원문 전체를 반영하게 한다.
+4. **비용 트레이드오프**: `full_text`는 기사당 평균 1,000~2,000자(최대 약 4,000자 관찰됨, Task 3b 검증 기록 참고)로 `description`(100~200자)보다 훨씬 크다 — 입력 토큰이 유의미하게 늘어날 것으로 예상됨. 실데이터 검증에서 `prompt_tokens`를 변경 전/후 직접 비교해 증가폭을 사용자에게 보고한다(추측 아니라 실측).
+
+### 검증 기준 (추가, 실데이터)
+- [ ] `daily_briefing_enriched_<date>.json`이 있을 때 그걸 우선 읽는지, 없을 때 기존 파일로 폴백하는지 둘 다 확인
+- [ ] 실제 DeepSeek 호출로 `prompt_tokens`를 6차 변경 전(description만)과 후(full_text 포함)로 직접 비교 — 증가폭 실측 보고
+- [ ] `full_text`가 있는 기사의 `probable_cause`/`key_facts`가 description만 쓰던 이전 결과보다 더 구체적인지(원문에만 있던 사고 원인이 실제로 반영되는지) 샘플 대조
+- [ ] `full_text`가 null인 기사(매칭 실패분)는 기존처럼 description만으로 정상 처리되는지(회귀 없음)
+- [ ] 기존 정상 분류/드롭 결과 회귀 없는지 확인
+
+### 검증 (2026-11-20) — 통과, 승인됨
+로컬 실데이터(`daily_briefing_enriched_2026-11-17.json`, 24건, full_text 20건 채워짐)로 실제 DeepSeek 호출:
+- **품질 개선 확인**: "태영건설" 사고 `probable_cause`="포장장비 트랙 턴버클 분리 과정에서 신체가 트랙 실린더와 본체 사이에 끼임", "한솔제지" 사고 `probable_cause`="지게차로 운반 중 빠진 종이롤이 굴러가자 작업자가 이를 직접 막으려다 종이롤과 제어패널 설비 사이에 협착" — 둘 다 description만으론 알 수 없던 구체적 기계적 원인이 처음으로 채워짐. Task 3b 검증 때 직접 읽은 원문과 대조해 날조 없음 확인.
+- 기존 정상 분류 회귀 없음(NH농협생명→SAFETY_TREND, 원전입법→LAW_POLICY 유지). 중복판정도 더 정확해짐(원자력안전기술원 중복기사·서울시의원 중복기사를 실제로 같은 사건으로 올바르게 묶음). 19건 유지/5건 제외(중복 4 + 저관련성 1), dropped 5건 전수 확인 — 전부 타당(진짜 사고를 잘못 제거한 사례 없음).
+- **비용 실측**: `prompt_tokens` 5,218 → 29,378(약 5.6배 증가), `completion_tokens`는 거의 동일(3,528→3,506). 사용자에게 실측 보고 → 승인됨.
+- 폴백 동작 확인: enriched 파일 있는 날(11-17)은 우선 사용, 없는 날(11-15, 플레인 파일만 존재)은 description만으로 정상 처리(에러 없음, `prompt=2935`).
+- peak RSS 28.7MB — 1GB 제약에 문제없음.
+- **승인 → `deepseek_summarize.py` 루트로 이동 완료.**
 
 ## 입력 스키마 관련 메모
 Task 3(`output/daily_briefing_<date>.json`)는 아직 "구상 — 컨펌 대기" 상태(다른 세션에서 진행 중, 손대지 않음)이지만, 실제로 `output/daily_briefing_2026-11-12.json`(63건: incidents 25 + safety_and_maintenance 38, `stat_context` 포함)이 이미 실데이터로 존재해서 이걸 입력 스키마의 근거로 썼다. Task 3가 최종 컨펌되며 스키마가 바뀌면, 이 문서의 "입력" 절과 파싱 부분만 조정하면 된다(DeepSeek 호출 로직 자체는 영향 없음).

@@ -38,21 +38,20 @@ SYSTEM_PROMPT = (
     "중대한 결과가 원문에 명시됐는지를 근거로 '주의' 또는 '관심' 중 하나를 고른다. 구체적인 숫자 임계값을 "
     "지어내지 말고, 특보 유무와 사고 원문에 실제로 적힌 사실만 근거로 쓴다. "
     "2) key_warnings: 오늘 특히 조심해야 할 점을 최대 3개까지, 각 항목을 subject(구체적 대상 — 설비명, "
-    "작업 동작, 취약 구역)와 detail로 나눠서 작성한다. detail에는 두 가지를 한 문단에 모두 담는다 — "
-    "(a) 오늘 입력된 사고 기사의 원인·동향/정비기술 기사의 기법과 오늘 날씨 조건이 왜 겹쳐서 위험한지에 "
-    "대한 근거(2차·유사 사고 시나리오, 또는 그 기법을 현장에 어떻게 적용할 수 있는지), (b) 그 상황에서 "
-    "구체적으로 무엇을 확인·조치해야 하는지. 기사 내용을 단순 재요약하지 말고 날씨·기사를 실제로 연결한 "
-    "새로운 관점을 제시하면서, '조심하자' 같은 추상적 당부가 아니라 근거와 조치가 둘 다 있는 구체적 "
-    "문장으로 쓴다. **반드시 입력에 실제로 등장한 사고 원인·업종·기법이거나 날씨 수치 자체에서 직접 "
-    "끌어온 것만 쓴다 — '끼임', '컨베이어' 같은 입력에 없는 일반적인 산업안전 소재나 근거 없는 설비· "
-    "상황을 개수를 채우려고 지어내지 않는다.** 입력 사고·동향 기사 수보다 더 많은 경고를 억지로 만들지 "
-    "말 것 — 근거 있는 경고가 1~2개뿐이면 그만큼만 쓰고, 사고나 동향 기사가 전부 없으면 날씨 정보만으로 "
-    "만들 수 있는 경고만 담는다(그마저 없으면 빈 배열). "
+    "작업 동작, 취약 구역), reason(그 상황이 오늘 왜 특히 위험한지 — 입력된 사고 원인·동향/정비기술 기법과 "
+    "오늘 날씨 조건이 어떻게 겹치는지에 대한 근거), action(그 상황에서 구체적으로 무엇을 확인·조치해야 "
+    "하는지)으로 나눠서 작성한다. reason과 action은 각각 간결한 한 문장(50자 내외, 아무리 길어도 한 문장을 "
+    "넘기지 않는다)으로 쓴다. 기사 내용을 단순 재요약하지 말고 날씨·기사를 실제로 연결한 근거를 reason에 "
+    "담고, '조심하자' 같은 추상적 당부가 아니라 실행 가능한 구체적 행동을 action에 담는다. **반드시 입력에 "
+    "실제로 등장한 사고 원인·업종·기법이거나 날씨 수치 자체에서 직접 끌어온 것만 쓴다 — '끼임', '컨베이어' "
+    "같은 입력에 없는 일반적인 산업안전 소재나 근거 없는 설비·상황을 개수를 채우려고 지어내지 않는다.** "
+    "입력 사고·동향 기사 수보다 더 많은 경고를 억지로 만들지 말 것 — 근거 있는 경고가 1~2개뿐이면 그만큼만 "
+    "쓰고, 사고나 동향 기사가 전부 없으면 날씨 정보만으로 만들 수 있는 경고만 담는다(그마저 없으면 빈 배열). "
     "3) closing_message: 오늘 날씨에 맞춘 한 문장짜리 마무리 안전 한마디. "
     "사실 확인 전 추측을 만들지 않는다 — 입력에 없는 사고 원인·설비·수치를 지어내지 않는다. "
     '{"risk_level": "관심"|"주의"|"경고", "risk_reason": string, '
-    '"key_warnings": [{"subject": string, "detail": string},...], "closing_message": string} 형태의 '
-    "JSON 객체로만 응답한다."
+    '"key_warnings": [{"subject": string, "reason": string, "action": string},...], '
+    '"closing_message": string} 형태의 JSON 객체로만 응답한다.'
 )
 
 
@@ -154,9 +153,11 @@ def parse_assessment(response: dict) -> dict:
         raise RuntimeError("key_warnings가 배열이 아님")
     parsed_warnings = []
     for w in key_warnings:
-        if not isinstance(w, dict) or not w.get("subject") or not w.get("detail"):
-            raise RuntimeError(f"key_warnings 항목에 subject/detail이 없음: {w!r}")
-        parsed_warnings.append({"subject": str(w["subject"]), "detail": str(w["detail"])})
+        if not isinstance(w, dict) or not w.get("subject") or not w.get("reason") or not w.get("action"):
+            raise RuntimeError(f"key_warnings 항목에 subject/reason/action이 없음: {w!r}")
+        parsed_warnings.append({
+            "subject": str(w["subject"]), "reason": str(w["reason"]), "action": str(w["action"]),
+        })
     closing_message = parsed.get("closing_message")
     if not closing_message:
         raise RuntimeError("closing_message가 비어있음")

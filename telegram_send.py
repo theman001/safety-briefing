@@ -150,8 +150,9 @@ def assessment_block(data: dict) -> str:
     ]
     if data["key_warnings"]:
         for w in data["key_warnings"]:
-            lines.append(f"- <b>{_esc(w['subject'])}</b>")
-            lines.append(f" &gt; {_esc(w['detail'])}")
+            lines.append(f"▪️ <b>{_esc(w['subject'])}</b>")
+            lines.append(f"⚡ {_esc(w['reason'])}")
+            lines.append(f"✅ {_esc(w['action'])}")
     else:
         lines.append("- (해당 없음)")
     lines.append("")

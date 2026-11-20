@@ -12,18 +12,28 @@ def _fake_response(content: dict) -> dict:
 def test_parse_assessment_accepts_valid_response():
     content = {
         "risk_level": "주의", "risk_reason": "강풍",
-        "key_warnings": [{"subject": "설비1", "detail": "경고1"}],
+        "key_warnings": [{"subject": "설비1", "reason": "근거1", "action": "조치1"}],
         "closing_message": "오늘의 한마디",
     }
     result = parse_assessment(_fake_response(content))
     assert result["risk_level"] == "주의"
-    assert result["key_warnings"] == [{"subject": "설비1", "detail": "경고1"}]
+    assert result["key_warnings"] == [{"subject": "설비1", "reason": "근거1", "action": "조치1"}]
     assert "cross_insights" not in result
 
 
 def test_parse_assessment_rejects_key_warning_without_subject():
     content = {"risk_level": "관심", "risk_reason": "x",
-               "key_warnings": [{"detail": "경고1"}], "closing_message": "x"}
+               "key_warnings": [{"reason": "경고1", "action": "조치1"}], "closing_message": "x"}
+    try:
+        parse_assessment(_fake_response(content))
+        assert False, "에러가 나야 함"
+    except RuntimeError:
+        pass
+
+
+def test_parse_assessment_rejects_key_warning_without_action():
+    content = {"risk_level": "관심", "risk_reason": "x",
+               "key_warnings": [{"subject": "설비1", "reason": "경고1"}], "closing_message": "x"}
     try:
         parse_assessment(_fake_response(content))
         assert False, "에러가 나야 함"
@@ -77,6 +87,7 @@ def test_build_request_payload_splits_incidents_and_trends():
 if __name__ == "__main__":
     test_parse_assessment_accepts_valid_response()
     test_parse_assessment_rejects_key_warning_without_subject()
+    test_parse_assessment_rejects_key_warning_without_action()
     test_parse_assessment_rejects_invalid_risk_level()
     test_parse_assessment_rejects_missing_closing_message()
     test_apply_official_floor_forces_warning_level()

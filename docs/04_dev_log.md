@@ -332,3 +332,9 @@
 - 결정: `cross_insights` 필드 제거, `key_warnings` 하나로 통합(detail에 "왜 위험한지+무엇을 해야 하는지"를 한 문단에). 상세 설계는 `task-08b-comprehensive-assessment.md` "피드백 반영 (2026-11-20, 2차)" 참고.
 - **구현·검증(2026-11-20)**: `assessment_synthesize.py`(SYSTEM_PROMPT 2)/3) 통합, `parse_assessment()`/`_write_skip()`에서 cross_insights 제거)와 `telegram_send.py`(assessment_block()에서 "🔗 교차 인사이트" 섹션 삭제)를 test/로 복사해 수정. 2026-11-19 실데이터 3회 실행 — **중복 0/3, 구조적으로 완전히 해결**(필드가 하나뿐이라 애초에 중복될 공간이 없음). 각 key_warning의 detail에 "왜 위험한지+무엇을 해야 하는지"가 풍부하게 한 문단에 다 들어있음, 날조 없음. 단위테스트 갱신 후 통과.
 - **사용자 승인 → `assessment_synthesize.py`/`telegram_send.py` 둘 다 루트로 이동, `task-08b`/`02_roadmap.md` 갱신 완료.**
+
+## 피드백 반영 (2026-11-20, 3차) — 핵심 경고 가독성: 들여쓰기 제거 + detail을 reason/action으로 분리
+- 필드 통합(2차) 배포 직후, 사용자가 실전송 내용을 보고 핵심 경고 섹션의 가독성 저하를 지적: (1) 가독성 최우선, (2) `" &gt; "` 들여쓰기가 가독성을 해침 — 교체 필요, (3) `detail`(왜+무엇을 한 문단에 합친 것) 내용이 너무 길다 — 요약 또는 n줄 분리.
+- 2차 통합의 "중복 재발 방지" 효과는 유지하면서, 통합된 항목 **내부**의 표현만 다시 손본다. 결정: `key_warnings`의 `detail`을 `reason`(왜 위험한지, 1문장)/`action`(무엇을 할지, 1문장) 두 필드로 분리하고, 렌더링은 `article_block()`과 같은 "아이콘+공백, flush-left" 스타일(`▪️`/`⚡`/`✅`)로 통일해 `" &gt; "` 들여쓰기를 제거.
+- 상세 설계는 `task-08b-comprehensive-assessment.md` "피드백 반영 (2026-11-20, 3차)"(스키마/프롬프트 변경)와 `task-05b-telegram-send.md` "피드백 반영 (2026-11-20, 2차)"(렌더링 변경) 참고.
+- **구현·검증(2026-11-20)**: 서버에서 받아온 실데이터(`summarized_briefing_2026-11-19.json` 사고1/동향9 + `weather_20261120.json`)로 3회 실행. `reason`/`action` 각각 1문장(42~80자)으로 안정적으로 분리됨, 날조 없음(마포구 공덕동·13층·35m·72% 통계 전부 원문 일치). 렌더링은 `" &gt; "` 들여쓰기 없이 `▪️`/`⚡`/`✅` flush-left 3줄, 블록 길이 501~783자로 여유 충분. 단위테스트 전부 통과. **사용자 승인("진행해") → `assessment_synthesize.py`/`telegram_send.py` 둘 다 루트로 이동, `task-08b`/`task-05b`/`02_roadmap.md` 갱신 완료.**

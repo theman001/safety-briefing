@@ -45,16 +45,29 @@ def test_law_bill_with_truncated_title_caught_via_description():
     assert result["classification"] == "LAW_POLICY", result
 
 
-def test_generic_followup_word_in_non_incident_article_still_unfixed_at_1b():
-    # 2026-11-18 결정: 이 종류(보험상품 소개 기사가 "보상" 단어로 INCIDENT_FOLLOWUP에
-    # 걸림)는 1b 키워드 레벨에서 더 패치하지 않기로 함 — 최종 교정은 Task 4(AI)의
-    # 몫이다. 이 테스트는 "1b는 의도적으로 그대로 둔다"는 현재 설계를 문서화한다 —
-    # 나중에 이 값이 바뀌면 task-01b-news-classify.md의 "피드백 반영(4차)"도 같이
-    # 갱신해야 한다는 신호로 삼는다.
+def test_primary_sector_article_now_excluded_at_1b():
+    # 2026-11-18 당시엔 이 기사(보험상품 소개가 "보상" 단어로 INCIDENT_FOLLOWUP에 걸림)를
+    # 1b에서 더 패치하지 않고 Task 4(AI)가 교정하도록 뒀었다. 2026-11-20 5차(1차산업/운송업
+    # 제외)로 PRIMARY_SECTOR_CONTEXT("농업")가 추가되면서, 이제는 1b 단계에서 바로
+    # EXCLUDED된다 — task-01b-news-classify.md 5차의 명시적 검증 기준이기도 하다.
     title = "농업도 일터다... NH농협생명이 메우는 산재 안전망의 빈자리"
     desc = "NH농협생명이 자영농·가족종사자 대상 산재 안전망의 빈자리를 보완하는 보험·보상 체계를 소개."
     result = classify(title, desc)
-    assert result["classification"] == "INCIDENT_FOLLOWUP", result
+    assert result["classification"] == "EXCLUDED", result
+
+
+def test_pure_traffic_accident_not_excluded_at_1b_by_design():
+    # 2026-11-20 실사례: "안전상황실" 일일 칼럼(순수 교통사고 한 줄 + 무관한 과거 재난
+    # 나열)이 "숨져" 키워드만으로 INCIDENT_REPORT가 돼 실제 발송까지 샌 사건. "트럭"을
+    # TRANSPORT_CONTEXT에 추가하는 방안은 건설현장 트럭 사고를 잘못 제외할 위험이 있어
+    # 기각(사용자 결정) — 1b는 업종 단위 큰 틀 블랙리스트만 맡고, 이런 경계 사례는
+    # Task 4(2차, 맥락 이해 재분류)가 처리한다. 이 테스트는 "1b는 의도적으로 이 케이스를
+    # 그대로 통과시킨다"는 현재 설계를 문서화한다 — task-04-deepseek-summarize.md의
+    # 보호 규칙 정교화(비산업 사건 재분류)가 이 역할을 대신 맡는다.
+    title = "[안전상황실·19일] 전주서 도로 건너던 60대 트럭에 치여 숨져"
+    desc = "사고는 위험물 저장시설과 주거지역 사이의 안전거리 확보, 가스 누출 감지와 긴급차단 체계의 중요성을 보여주는 대표적인 산업재해로 기록됐다."
+    result = classify(title, desc)
+    assert result["classification"] in ("INCIDENT_REPORT", "INCIDENT_FOLLOWUP"), result
 
 
 if __name__ == "__main__":
@@ -63,5 +76,6 @@ if __name__ == "__main__":
     test_known_good_incident_report_unaffected()
     test_known_good_followup_with_title_evidence_unaffected()
     test_law_bill_with_truncated_title_caught_via_description()
-    test_generic_followup_word_in_non_incident_article_still_unfixed_at_1b()
+    test_primary_sector_article_now_excluded_at_1b()
+    test_pure_traffic_accident_not_excluded_at_1b_by_design()
     print("OK")

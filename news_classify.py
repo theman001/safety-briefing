@@ -76,6 +76,20 @@ PUBLIC_SECTOR_CONTEXT = [
     "환경미화원", "미화원", "가로 청소", "낙엽 청소", "청소노동자", "환경공무관",
     "대학", "캠퍼스", "대학교",
 ]
+# 사용자 결정(2026-11-20): 1차산업/운송업이 기사의 본질적 주제인 경우 전체 제외.
+# PUBLIC_SECTOR_CONTEXT와 동일한 패턴(업종 특정 키워드 없을 때만 적용하는 네거티브 컨텍스트).
+PRIMARY_SECTOR_CONTEXT = [
+    "농업", "농가", "농민", "농장", "농작업", "축산", "축산업", "가축", "양돈", "양계", "양봉",
+    "수산업", "어업", "어민", "어선", "양식장", "양식업", "임업", "산림", "벌목",
+]
+# "트럭"은 추가하지 않는다(사용자 결정, 2026-11-20): 건설업이 INDUSTRY_TERMS 7개 업종에
+# 없어서 건설현장 트럭 사고를 잘못 제외할 위험이 실제 테스트로 확인됨(실데이터 245건
+# 전수 검색으론 반례가 없었지만, 블랙리스트를 계속 늘리는 대신 1b는 업종 단위 큰 틀
+# 제외만 맡고, "안전상황실" 같은 경계 사례는 Task 4의 맥락 이해 재분류로 넘긴다).
+TRANSPORT_CONTEXT = [
+    "운송업", "운수업", "물류센터", "택배", "배달", "배달원", "배달기사", "이륜차", "퀵서비스",
+    "화물차", "화물운송", "버스운전", "버스기사", "대리운전",
+]
 
 BUSINESS_TITLE = [
     "주가", "공시", "실적", "증시", "투자자", "주식", "경영권", "지분", "공개매수", "상장",
@@ -103,9 +117,13 @@ def compressed(s: str) -> str:
 # 짧은 키워드가 무관한 복합어의 부분 문자열로 우연히 걸리는 경우의 예외 목록.
 # "공시"(공개 공시)가 "공공시설"(대구공공시설관리공단 기사, 2026-11-12 실데이터에서 발견)에
 # 우연히 매칭되는 문제 — 해당 term을 검사하기 전에 예외 문자열을 지우고 검사한다.
+# "어민"(PRIMARY_SECTOR_CONTEXT)이 "더불어민주당"(정당명, 국회의원 인용 기사에 매우 흔함)에
+# 우연히 매칭 — 2026-11-20 5차 실데이터 검증에서 발견(현대엔지니어링 사망사고 기사가
+# "더불어민주당 의원실" 인용 때문에 잘못 EXCLUDED됨).
 TERM_COLLISION_EXCEPTIONS = {
     "방산": ["방산면"],
     "공시": ["공공시설"],
+    "어민": ["더불어민주당"],
 }
 
 
@@ -144,6 +162,10 @@ def classify(title: str, description: str) -> dict:
 
     if not industries and (hit(title, PUBLIC_SECTOR_CONTEXT) or hit(description, PUBLIC_SECTOR_CONTEXT)):
         return {"classification": "EXCLUDED", "industry_matches": industries, "reasons": ["공공·비산업 근로 맥락, 특정 업종 단서 없음"]}
+    primary_sector = hit(title, PRIMARY_SECTOR_CONTEXT) or hit(description, PRIMARY_SECTOR_CONTEXT)
+    transport = hit(title, TRANSPORT_CONTEXT) or hit(description, TRANSPORT_CONTEXT)
+    if not industries and (primary_sector or transport):
+        return {"classification": "EXCLUDED", "industry_matches": industries, "reasons": [f"1차산업/운송업 맥락, 특정 업종 단서 없음: {primary_sector + transport}"]}
     if not is_industrial:
         return {"classification": "EXCLUDED", "industry_matches": industries, "reasons": ["산업 맥락 확인 불가"]}
     if (civic or business) and not tit_evt:

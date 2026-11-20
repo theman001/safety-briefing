@@ -108,24 +108,25 @@ def test_to_messages_numbers_chunks_only_when_multiple():
 
 
 def test_assessment_block_renders_lists_and_fallback_when_empty():
-    data = {"risk_level": "주의", "risk_reason": "강풍", "cross_insights": [],
+    # 2026-11-20(2차): cross_insights 필드 제거, key_warnings 하나로 통합 — "🔗 교차 인사이트" 섹션도 삭제됨
+    data = {"risk_level": "주의", "risk_reason": "강풍",
             "key_warnings": [{"subject": "설비1", "detail": "경고1"}], "closing_message": "조심"}
     block = assessment_block(data)
     assert "🌡️ <b>위험지수</b>\n<code>주의</code> — 강풍" in block  # 소제목 느낌으로 줄바꿈
-    assert "(해당 없음)" in block  # cross_insights 비어서 fallback
+    assert "교차 인사이트" not in block
     assert "- <b>설비1</b>\n &gt; 경고1" in block  # 대상/내용 들여쓰기 2줄 (사용자 지정: " >" 접두)
     assert "<blockquote>☔️ <b>오늘의 한마디</b>\n조심</blockquote>" in block
 
 
 def test_assessment_block_key_warnings_fallback_when_empty():
-    data = {"risk_level": "관심", "risk_reason": "x", "cross_insights": [], "key_warnings": [], "closing_message": "x"}
+    data = {"risk_level": "관심", "risk_reason": "x", "key_warnings": [], "closing_message": "x"}
     block = assessment_block(data)
     assert "- (해당 없음)" in block
 
 
 def test_assessment_block_escapes_html_special_chars():
-    data = {"risk_level": "주의", "risk_reason": "기온 > 33도 & 강풍", "cross_insights": ["A<B"],
-             "key_warnings": [], "closing_message": "x"}
+    data = {"risk_level": "주의", "risk_reason": "기온 > 33도 & 강풍",
+             "key_warnings": [{"subject": "A<B", "detail": "x"}], "closing_message": "x"}
     block = assessment_block(data)
     assert "기온 &gt; 33도 &amp; 강풍" in block
     assert "A&lt;B" in block

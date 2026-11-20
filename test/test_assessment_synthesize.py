@@ -12,18 +12,17 @@ def _fake_response(content: dict) -> dict:
 def test_parse_assessment_accepts_valid_response():
     content = {
         "risk_level": "주의", "risk_reason": "강풍",
-        "cross_insights": ["인사이트1"],
         "key_warnings": [{"subject": "설비1", "detail": "경고1"}],
         "closing_message": "오늘의 한마디",
     }
     result = parse_assessment(_fake_response(content))
     assert result["risk_level"] == "주의"
-    assert result["cross_insights"] == ["인사이트1"]
     assert result["key_warnings"] == [{"subject": "설비1", "detail": "경고1"}]
+    assert "cross_insights" not in result
 
 
 def test_parse_assessment_rejects_key_warning_without_subject():
-    content = {"risk_level": "관심", "risk_reason": "x", "cross_insights": [],
+    content = {"risk_level": "관심", "risk_reason": "x",
                "key_warnings": [{"detail": "경고1"}], "closing_message": "x"}
     try:
         parse_assessment(_fake_response(content))
@@ -33,7 +32,7 @@ def test_parse_assessment_rejects_key_warning_without_subject():
 
 
 def test_parse_assessment_rejects_invalid_risk_level():
-    content = {"risk_level": "매우위험", "risk_reason": "x", "cross_insights": [], "key_warnings": [], "closing_message": "x"}
+    content = {"risk_level": "매우위험", "risk_reason": "x", "key_warnings": [], "closing_message": "x"}
     try:
         parse_assessment(_fake_response(content))
         assert False, "에러가 나야 함"
@@ -42,7 +41,7 @@ def test_parse_assessment_rejects_invalid_risk_level():
 
 
 def test_parse_assessment_rejects_missing_closing_message():
-    content = {"risk_level": "관심", "risk_reason": "x", "cross_insights": [], "key_warnings": [], "closing_message": ""}
+    content = {"risk_level": "관심", "risk_reason": "x", "key_warnings": [], "closing_message": ""}
     try:
         parse_assessment(_fake_response(content))
         assert False, "에러가 나야 함"
@@ -51,7 +50,7 @@ def test_parse_assessment_rejects_missing_closing_message():
 
 
 def test_apply_official_floor_forces_warning_level():
-    result = {"risk_level": "관심", "risk_reason": "날씨 평이함", "cross_insights": [], "key_warnings": [], "closing_message": "x"}
+    result = {"risk_level": "관심", "risk_reason": "날씨 평이함", "key_warnings": [], "closing_message": "x"}
     out = apply_official_floor(result, ["강풍주의보", "풍랑주의보"])
     assert out["risk_level"] == "경고"
     assert "강풍주의보·풍랑주의보" in out["risk_reason"]
@@ -59,7 +58,7 @@ def test_apply_official_floor_forces_warning_level():
 
 
 def test_apply_official_floor_noop_when_no_active_warnings():
-    result = {"risk_level": "관심", "risk_reason": "날씨 평이함", "cross_insights": [], "key_warnings": [], "closing_message": "x"}
+    result = {"risk_level": "관심", "risk_reason": "날씨 평이함", "key_warnings": [], "closing_message": "x"}
     out = apply_official_floor(result, [])
     assert out == result
 

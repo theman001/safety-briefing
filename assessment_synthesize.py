@@ -32,31 +32,25 @@ SYSTEM_PROMPT = (
     "너는 산업안전 현장관리자가 아침 TBM(작업 전 안전회의)에서 쓸 '종합 평가'를 작성하는 보조원이다. "
     "입력은 오늘 아침 기준 서울의 날씨 요약(기온/습도/강수확률/풍속/하늘상태/강수형태)과 현재 발효 중인 "
     "공식 기상특보 목록, 그리고 오늘 발송되는 어제자 사고 기사 요약·안전동향/정비기술 기사 요약이다. "
-    "아래 4가지를 작성하라. "
+    "아래 3가지를 작성하라. "
     "1) risk_level: 공식 특보가 있으면 반드시 '경고'로 판정하고 risk_reason에 특보명을 명시한다. 특보가 "
     "없으면 날씨 수치가 평소보다 상당히 높거나/낮거나/강한 수준인지, 그리고 사고 기사에 사망·중상 등 "
     "중대한 결과가 원문에 명시됐는지를 근거로 '주의' 또는 '관심' 중 하나를 고른다. 구체적인 숫자 임계값을 "
     "지어내지 말고, 특보 유무와 사고 원문에 실제로 적힌 사실만 근거로 쓴다. "
-    "2) cross_insights: 오늘 입력으로 주어진 사고 기사의 원인과 오늘 날씨 조건이 겹칠 때 생길 수 있는 "
-    "2차·유사 사고 시나리오, 그리고 입력으로 주어진 안전동향·정비기술 기사의 기법을 현장에 어떻게 적용할 "
-    "수 있는지를 실무 관점으로 최대 3개까지 작성한다. 기사 내용을 단순 재요약하지 말고 날씨·기사를 실제로 "
-    "연결한 새로운 관점을 제시한다. **반드시 입력에 실제로 등장한 사고 원인·업종·기법에서만 끌어온다 — "
-    "'끼임', '컨베이어' 같은 입력에 없는 일반적인 산업안전 소재를 개수를 채우려고 지어내지 않는다.** "
-    "입력 사고·동향 기사 수보다 더 많은 인사이트를 억지로 만들지 말 것 — 근거 있는 인사이트가 1개뿐이면 "
-    "1개만 쓰고, 사고나 동향 기사가 전부 없으면 빈 배열로 둔다. "
-    "3) key_warnings: 오늘 특히 조심해야 할 점을 최대 3개까지, 각 항목을 subject(구체적 대상 — 설비명, "
-    "작업 동작, 취약 구역)와 detail(그 대상에 대해 오늘 특히 주의할 구체적 내용)로 나눠서 작성한다. "
-    "'조심하자' 같은 추상적 당부는 쓰지 않는다. **이 역시 입력 사고·동향 기사에 실제로 나온 설비·업종이거나, "
-    "날씨 수치 자체에서 직접 끌어온 경고만 쓴다 — 근거가 없는 설비·상황을 지어내 개수를 채우지 않는다.** "
-    "근거가 2개뿐이면 2개만 쓴다. "
-    "cross_insights와 key_warnings는 같은 소재(같은 사고 기사, 같은 동향 기사)를 중복해서 쓰지 "
-    "않는다 — 이미 cross_insights에서 다룬 사고/동향 기사는 key_warnings에서 다시 그 기사를 "
-    "소재로 쓰지 않는다(반대도 마찬가지). 소재가 부족해 둘 다 채우기 어려우면 한쪽(또는 양쪽)을 "
-    "더 적게 쓴다 — 억지로 같은 소재를 재구성해서 채우지 않는다. "
-    "4) closing_message: 오늘 날씨에 맞춘 한 문장짜리 마무리 안전 한마디. "
-    "사실 확인 전 추측을 만들지 않는다 — 입력에 없는 사고 원인·설비·수치를 지어내지 않는다. 사고/동향 "
-    "기사가 모두 없으면 cross_insights/key_warnings는 날씨 정보만으로 만들 수 있는 내용만 담는다. "
-    '{"risk_level": "관심"|"주의"|"경고", "risk_reason": string, "cross_insights": [string,...], '
+    "2) key_warnings: 오늘 특히 조심해야 할 점을 최대 3개까지, 각 항목을 subject(구체적 대상 — 설비명, "
+    "작업 동작, 취약 구역)와 detail로 나눠서 작성한다. detail에는 두 가지를 한 문단에 모두 담는다 — "
+    "(a) 오늘 입력된 사고 기사의 원인·동향/정비기술 기사의 기법과 오늘 날씨 조건이 왜 겹쳐서 위험한지에 "
+    "대한 근거(2차·유사 사고 시나리오, 또는 그 기법을 현장에 어떻게 적용할 수 있는지), (b) 그 상황에서 "
+    "구체적으로 무엇을 확인·조치해야 하는지. 기사 내용을 단순 재요약하지 말고 날씨·기사를 실제로 연결한 "
+    "새로운 관점을 제시하면서, '조심하자' 같은 추상적 당부가 아니라 근거와 조치가 둘 다 있는 구체적 "
+    "문장으로 쓴다. **반드시 입력에 실제로 등장한 사고 원인·업종·기법이거나 날씨 수치 자체에서 직접 "
+    "끌어온 것만 쓴다 — '끼임', '컨베이어' 같은 입력에 없는 일반적인 산업안전 소재나 근거 없는 설비· "
+    "상황을 개수를 채우려고 지어내지 않는다.** 입력 사고·동향 기사 수보다 더 많은 경고를 억지로 만들지 "
+    "말 것 — 근거 있는 경고가 1~2개뿐이면 그만큼만 쓰고, 사고나 동향 기사가 전부 없으면 날씨 정보만으로 "
+    "만들 수 있는 경고만 담는다(그마저 없으면 빈 배열). "
+    "3) closing_message: 오늘 날씨에 맞춘 한 문장짜리 마무리 안전 한마디. "
+    "사실 확인 전 추측을 만들지 않는다 — 입력에 없는 사고 원인·설비·수치를 지어내지 않는다. "
+    '{"risk_level": "관심"|"주의"|"경고", "risk_reason": string, '
     '"key_warnings": [{"subject": string, "detail": string},...], "closing_message": string} 형태의 '
     "JSON 객체로만 응답한다."
 )
@@ -155,10 +149,9 @@ def parse_assessment(response: dict) -> dict:
     risk_reason = parsed.get("risk_reason")
     if not risk_reason:
         raise RuntimeError("risk_reason이 비어있음")
-    cross_insights = parsed.get("cross_insights")
     key_warnings = parsed.get("key_warnings")
-    if not isinstance(cross_insights, list) or not isinstance(key_warnings, list):
-        raise RuntimeError("cross_insights/key_warnings가 배열이 아님")
+    if not isinstance(key_warnings, list):
+        raise RuntimeError("key_warnings가 배열이 아님")
     parsed_warnings = []
     for w in key_warnings:
         if not isinstance(w, dict) or not w.get("subject") or not w.get("detail"):
@@ -171,7 +164,6 @@ def parse_assessment(response: dict) -> dict:
     return {
         "risk_level": risk_level,
         "risk_reason": str(risk_reason),
-        "cross_insights": [str(x) for x in cross_insights],
         "key_warnings": parsed_warnings,
         "closing_message": str(closing_message),
     }
@@ -202,7 +194,7 @@ def _write_skip(out_path: str, target: str, reason: str) -> None:
             "skipped": True,
             "skip_reason": reason,
             "risk_level": None, "risk_reason": None,
-            "cross_insights": [], "key_warnings": [], "closing_message": None,
+            "key_warnings": [], "closing_message": None,
             "token_usage": {"prompt_tokens": None, "completion_tokens": None},
         }, f, ensure_ascii=False, indent=2)
 

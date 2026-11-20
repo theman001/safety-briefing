@@ -146,11 +146,8 @@ def assessment_block(data: dict) -> str:
         "🌡️ <b>위험지수</b>",
         f"<code>{_esc(data['risk_level'])}</code> — {_esc(data['risk_reason'])}",
         "",
-        "🔗 <b>교차 인사이트</b>",
+        "<u><b>⚠️ 핵심 경고</b></u>",
     ]
-    lines.extend(f"- {_esc(x)}" for x in (data["cross_insights"] or ["(해당 없음)"]))
-    lines.append("")
-    lines.append("<u><b>⚠️ 핵심 경고</b></u>")
     if data["key_warnings"]:
         for w in data["key_warnings"]:
             lines.append(f"- <b>{_esc(w['subject'])}</b>")

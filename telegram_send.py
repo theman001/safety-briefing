@@ -89,7 +89,6 @@ def article_block(i: int, s: dict) -> str:
     기사 제목·URL에 <, >, &가 우연히 들어있으면(예: 'S&OIL') 이스케이프 없이는
     텔레그램이 'can't parse entities'로 전송을 거부한다.
     """
-    cause = _esc(s.get("probable_cause") or "확인되지 않음(조사 중)")
     industry = _esc(s.get("industry") or "업종 미확인")
     key_facts = _esc(s.get("key_facts") or "세부 사실 확인 전")
     type_part = f" · 🔧 <b>{_esc(s['incident_type'])}</b>" if s.get("incident_type") else ""
@@ -97,8 +96,9 @@ def article_block(i: int, s: dict) -> str:
         f"{i}. <b>{_esc(s['title'])}</b>",
         f"🏭 {industry}{type_part}",
         f"📝 {key_facts}",
-        f"🔍 <b>원인:</b> {cause}",
     ]
+    if s.get("probable_cause"):
+        lines.append(f"🔍 <b>원인:</b> {_esc(s['probable_cause'])}")
     if s.get("maintenance_lesson"):
         lines.append(f"💡 <b>교훈:</b> {_esc(s['maintenance_lesson'])}")
     lines.append(f'🔗 <a href="{_esc_attr(s["link"])}">기사 원문</a>')

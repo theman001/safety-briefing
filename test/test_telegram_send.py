@@ -9,7 +9,15 @@ def test_article_block_omits_null_fields():
     block = article_block(1, s)
     assert "🔧" not in block
     assert "💡" not in block
-    assert "확인되지 않음(조사 중)" in block
+    assert "🔍" not in block  # 2026-11-20: probable_cause가 null이면 "확인되지 않음(조사 중)" 필러 없이 원인 줄 자체를 생략
+
+
+def test_article_block_shows_probable_cause_when_present():
+    # 2026-11-20: Task4가 원문 근거로 실제로 채운 값(예: "확인되지 않음(조사 중)" 그 자체일 수도 있음)만 그대로 노출
+    s = {"title": "제목", "industry": "건설", "incident_type": None, "key_facts": "사실",
+         "probable_cause": "확인되지 않음(조사 중)", "maintenance_lesson": None, "needs_review": True, "link": "http://x"}
+    block = article_block(1, s)
+    assert "🔍 <b>원인:</b> 확인되지 않음(조사 중)" in block
 
 
 def test_article_block_omits_needs_review_tag():
@@ -149,6 +157,7 @@ if __name__ == "__main__":
     from pathlib import Path
 
     test_article_block_omits_null_fields()
+    test_article_block_shows_probable_cause_when_present()
     test_article_block_omits_needs_review_tag()
     test_article_block_handles_null_industry_and_key_facts()
     test_article_block_escapes_html_special_chars()
